@@ -97,7 +97,7 @@ struct ExpandedView: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                Text("live from Anthropic")
+                Text(syncLabel)
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(Theme.tertiaryText)
             }
@@ -110,6 +110,15 @@ struct ExpandedView: View {
                     .foregroundStyle(Theme.tertiaryText)
             }
         }
+    }
+
+    /// The endpoint is rate limited, so a sync is periodic rather than constant.
+    /// Say when it last happened instead of implying a live feed.
+    private var syncLabel: String {
+        guard let synced = snapshot.serverSyncedAt else { return "calibrated" }
+        let age = now.timeIntervalSince(synced)
+        if age < 90 { return "verified with Anthropic just now" }
+        return "verified with Anthropic \(Format.duration(age)) ago"
     }
 
     private var resetCountdown: String {

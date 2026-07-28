@@ -16,9 +16,19 @@ final class UsageStore: ObservableObject {
     private var timer: Timer?
     private var watcher: DirectoryWatcher?
     private var isFetchingServer = false
+    private var lastServerAttempt: Date?
+    private var serverBackoff: TimeInterval = 0
 
     /// Slow heartbeat; the directory watcher supplies the fast path.
     private let pollInterval: TimeInterval = 15
+
+    /// Floor between usage-endpoint calls.
+    ///
+    /// This endpoint is rate limited — polling it on every local refresh earns a
+    /// 429 within the hour. It only needs to be called often enough to keep the
+    /// allowance calibrated and the reset time honest; the token count in between
+    /// comes from transcripts, for free.
+    private let serverMinInterval: TimeInterval = 300
 
     func start() {
         refresh()
@@ -44,11 +54,15 @@ final class UsageStore: ObservableObject {
             resetAt: block?.end,
             source: .local
         )
-        // Preserve a server percentage across local refreshes so the number does not
-        // flicker between authoritative and estimated between fetches.
-        if let existing = snapshot.serverPercent, snapshot.source == .server {
-            next.serverPercent = existing
+        // Carry the server's calibration forward between fetches. The reset time
+        // especially: the server knows the true window start, which the local block
+        // math can only infer from transcripts on this machine.
+        if let synced = snapshot.serverSyncedAt {
+            next.serverSyncedAt = synced
             next.source = .server
+            if let serverReset = snapshot.resetAt, serverReset > now {
+                next.resetAt = serverReset
+            }
         }
 
         snapshot = next
@@ -71,6 +85,13 @@ final class UsageStore: ObservableObject {
 
     private func fetchServer() {
         guard !isFetchingServer else { return }
+
+        // Respect the floor, and whatever backoff a previous failure imposed.
+        let gap = max(serverMinInterval, serverBackoff)
+        if let last = lastServerAttempt, Date().timeIntervalSince(last) < gap { return }
+
+        // Stamp before the request, so failures throttle too.
+        lastServerAttempt = Date()
         isFetchingServer = true
         Task { [weak self] in
             defer { Task { @MainActor in self?.isFetchingServer = false } }
@@ -79,7 +100,7 @@ final class UsageStore: ObservableObject {
                 await MainActor.run {
                     guard let self else { return }
                     var s = self.snapshot
-                    s.serverPercent = report.sessionPercent
+                    s.serverSyncedAt = Date()
                     // The server knows the true window start, which can predate
                     // anything in the local transcripts (usage from claude.ai or
                     // another machine). Always prefer its reset time.
@@ -111,11 +132,25 @@ final class UsageStore: ObservableObject {
                     self.snapshot = s
                     self.weeklyPercent = report.weeklyPercent
                     self.serverNote = nil
+                    self.serverBackoff = 0
                 }
             } catch {
                 await MainActor.run {
-                    // Fail soft: keep the local estimate, just say the sync did not land.
-                    self?.serverNote = "server sync unavailable"
+                    guard let self else { return }
+                    // Fail soft: the local estimate stays on screen, calibrated from
+                    // the last successful sync.
+                    switch error {
+                    case ServerUsageClient.Failure.badStatus(429):
+                        // Rate limited. Back off hard — the numbers on screen are
+                        // still live, they just stop being re-verified for a while.
+                        self.serverBackoff = min(max(self.serverBackoff * 2, 900), 3600)
+                        self.serverNote = "rate limited · retrying later"
+                    case ServerUsageClient.Failure.notEnabled:
+                        self.serverNote = nil
+                    default:
+                        self.serverBackoff = min(max(self.serverBackoff * 2, 60), 900)
+                        self.serverNote = "server sync unavailable"
+                    }
                 }
             }
         }

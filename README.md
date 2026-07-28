@@ -71,11 +71,20 @@ and calls `GET /api/oauth/usage` — the same endpoint Claude Code itself uses t
   "limits": [ { "kind": "session", "percent": 32, "resets_at": "...", "is_active": true } ] }
 ```
 
-The percentage and reset time come straight from there. Better still, an authoritative
-percentage plus an exact local token count *implies the allowance* — so the app
-continuously calibrates itself, and all four readouts stay consistent. Utilisation is
-reported as a whole percent, so each sample carries ~1pp of quantisation error; the
-implied allowance is smoothed rather than overwritten to stop it wandering.
+The server's job is **calibration, not display**. An authoritative percentage plus an
+exact local token count implies the allowance — so the app works backwards to your real
+allowance, and from then on computes the percentage itself, continuously, from
+transcripts.
+
+That indirection is deliberate. **The usage endpoint is rate limited** (polling it every
+15s earns a `429` within the hour), so it can only be called every few minutes. A stored
+server percentage would sit frozen between calls while your token count kept climbing.
+Calibrating instead means the number on screen updates every refresh *and* agrees with
+Anthropic. Calls are floored at 5 minutes apart, with exponential backoff to an hour on
+`429`; the panel keeps working throughout, it just stops re-verifying for a while.
+
+Utilisation comes back as a whole percent, so each sample carries ~1pp of quantisation
+error; the implied allowance is smoothed rather than overwritten to stop it wandering.
 
 This endpoint is **not** part of Anthropic's public API and can change on any Claude
 Code update. Every failure path falls back silently to the local estimate, which by
@@ -90,9 +99,22 @@ route, the panel shows an amber dot and the word *estimated*.
 > only sees transcripts on this machine, so usage from claude.ai or another Mac is
 > invisible to it, and the window start it infers can be off. Prefer live usage.
 
-**Keychain access.** macOS prompts the first time the app reads the token. Because the
-bundle is ad-hoc signed, its signature changes on every rebuild, so the prompt returns
-after each `make install`. Click *Always Allow*.
+**Keychain access.** macOS prompts the first time the app reads the token — click
+*Always Allow*.
+
+That grant is bound to the app's *designated requirement*. Under ad-hoc signing
+(`codesign -s -`) the requirement is derived from the binary hash, so every rebuild
+invalidates it and the prompt returns. `make signing-identity` creates a stable
+self-signed certificate in your login keychain, which pins the requirement to the
+certificate instead:
+
+```
+designated => identifier "com.arnay.claude-usage-buddy" and certificate leaf = H"29b5…"
+```
+
+Grant it once and it survives every subsequent rebuild. The Makefile picks the identity
+up automatically and falls back to ad-hoc if it isn't there.
+`scripts/remove-signing-identity.sh` reverses it.
 
 Note that raw totals are dominated by cache reads (~97% of tokens in practice), which
 are far cheaper than output tokens. Calibration absorbs that skew for a typical usage

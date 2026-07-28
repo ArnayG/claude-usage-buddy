@@ -42,8 +42,9 @@ struct UsageSnapshot: Equatable {
     var blockStart: Date?
     var resetAt: Date?
     var source: UsageSource
-    /// Set only when the server hands us an authoritative percentage.
-    var serverPercent: Double?
+    /// When Anthropic last confirmed the real percentage, which is what calibrated
+    /// `allowance`. Nil means the allowance is still a guess.
+    var serverSyncedAt: Date?
 
     static let empty = UsageSnapshot(counts: TokenCounts(), allowance: Defaults.allowance,
                                      blockStart: nil, resetAt: nil, source: .local)
@@ -51,18 +52,24 @@ struct UsageSnapshot: Equatable {
     var used: Int { counts.total }
     var remaining: Int { max(allowance - used, 0) }
 
-    /// 0...1, clamped. Prefers the server number when we have one.
+    /// Always computed locally, from an exact token count and a calibrated
+    /// allowance.
+    ///
+    /// Deliberately *not* the server's percentage held as a stored value: the usage
+    /// endpoint is rate limited, so it can only be called every few minutes, and a
+    /// stored percentage would sit frozen between calls while tokens kept climbing.
+    /// The server's job is to calibrate `allowance`; the percentage then updates
+    /// continuously and still agrees with it.
     var fraction: Double {
-        if let p = serverPercent { return min(max(p / 100, 0), 1) }
         guard allowance > 0 else { return 0 }
         return min(max(Double(used) / Double(allowance), 0), 1)
     }
 
     var percent: Double { fraction * 100 }
 
-    /// True when the percentage is inferred from a configured allowance rather
-    /// than reported by Anthropic. The UI must say so rather than imply precision.
-    var isEstimated: Bool { serverPercent == nil }
+    /// True while the allowance is an unverified guess. The UI must say so rather
+    /// than imply precision.
+    var isEstimated: Bool { serverSyncedAt == nil }
 
     var timeUntilReset: TimeInterval? {
         guard let resetAt else { return nil }

@@ -56,10 +56,11 @@ enum Main {
             _ = gate.wait(timeout: .now() + 12)
             serverLine = outcome
             if let report = fetched {
-                snapshot.serverPercent = report.sessionPercent
+                snapshot.serverSyncedAt = Date()
                 if let reset = report.sessionResetsAt { snapshot.resetAt = reset }
                 if let pct = report.sessionPercent, pct >= 5, snapshot.used > 0 {
                     snapshot.allowance = Int((Double(snapshot.used) / (pct / 100)).rounded())
+                    serverLine = "ok (reported \(String(format: "%.0f", pct))%)"
                 }
             }
         }
@@ -73,7 +74,7 @@ enum Main {
             cache write  : \(Format.exact(snapshot.counts.cacheCreation))
             cache read   : \(Format.exact(snapshot.counts.cacheRead))
           allowance      : \(Format.exact(snapshot.allowance))\(snapshot.isEstimated ? "" : " (implied by server %)")
-          used           : \(String(format: "%.2f", snapshot.percent))%\(snapshot.isEstimated ? " (estimated)" : " (live from Anthropic)")
+          used           : \(String(format: "%.2f", snapshot.percent))%\(snapshot.isEstimated ? " (estimated)" : " (calibrated)")
           server         : \(serverLine)
           window start   : \(snapshot.blockStart.map(Format.time) ?? "—")
           resets at      : \(snapshot.resetAt.map(Format.time) ?? "—")
