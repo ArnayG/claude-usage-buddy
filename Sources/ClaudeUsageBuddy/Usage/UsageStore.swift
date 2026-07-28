@@ -6,6 +6,8 @@ import Foundation
 final class UsageStore: ObservableObject {
     @Published private(set) var snapshot = UsageSnapshot.empty
     @Published private(set) var weekly = TokenCounts()
+    /// Server-reported weekly utilisation, when the plan has a weekly bucket.
+    @Published private(set) var weeklyPercent: Double?
     @Published private(set) var lastUpdated: Date?
     /// Set when the opt-in server path was tried and did not work.
     @Published private(set) var serverNote: String?
@@ -78,9 +80,36 @@ final class UsageStore: ObservableObject {
                     guard let self else { return }
                     var s = self.snapshot
                     s.serverPercent = report.sessionPercent
+                    // The server knows the true window start, which can predate
+                    // anything in the local transcripts (usage from claude.ai or
+                    // another machine). Always prefer its reset time.
                     if let reset = report.sessionResetsAt { s.resetAt = reset }
                     s.source = .server
+
+                    // Self-calibration: an authoritative percentage plus an exact
+                    // local token count implies the allowance. This keeps all four
+                    // readouts consistent and leaves the local fallback calibrated
+                    // for whenever the server is unreachable.
+                    if let pct = report.sessionPercent, pct >= 5, s.used > 0 {
+                        let implied = Double(s.used) / (pct / 100)
+                        // Utilisation comes back as a whole percent, so any single
+                        // sample carries up to ~1pp of quantisation error — enough
+                        // to make the implied allowance visibly wander. Blend into
+                        // the stored value instead of overwriting it.
+                        let value: Double
+                        if Settings.hasCalibrated {
+                            value = Double(Settings.allowance) * 0.8 + implied * 0.2
+                        } else {
+                            value = implied
+                            Settings.hasCalibrated = true
+                        }
+                        let rounded = Int(value.rounded())
+                        Settings.allowance = rounded
+                        s.allowance = rounded
+                    }
+
                     self.snapshot = s
+                    self.weeklyPercent = report.weeklyPercent
                     self.serverNote = nil
                 }
             } catch {

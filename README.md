@@ -8,12 +8,12 @@ your current Claude session window you've used and when it resets.
         │        ▓▓ notch ▓▓      │
    ╭────┴─────────────────────────┴────╮
    │   ╭───╮   TOKENS USED             │
-   │   │21%│   53,068,712              │
-   │   ╰───╯   of 250M allowed         │
+   │   │32%│   70,870,879              │
+   │   ╰───╯   of 221M allowed         │
    │   ─────────────────────────────   │
    │   RESETS IN            AT         │
-   │   2h 38m               10:00 PM   │
-   │   ● estimated · calibrate         │
+   │   1h 59m               9:39 PM    │
+   │   ● live from Anthropic           │
    ╰───────────────────────────────────╯
 ```
 
@@ -58,22 +58,41 @@ gap opens a new block. Reset time is `blockStart + 5h`.
 
 ### About the percentage
 
-Token counts are exact. The percentage is not, and the app says so.
+Token counts are exact. The percentage needs a denominator that Anthropic doesn't
+publish — there's no token cap documented for the rolling session window, and it
+varies by plan and tier. So the app gets it one of two ways.
 
-Anthropic doesn't publish a token cap for the rolling session window — it varies by
-plan and tier — so there's no honest way to look up a denominator. Two ways to get a
-real number:
+**Live usage** (on by default). Reads the Claude Code OAuth token from your keychain
+and calls `GET /api/oauth/usage` — the same endpoint Claude Code itself uses to render
+`/usage`:
 
-**Calibrate** (recommended). Run `/usage` in any Claude Code session, open
-Settings & Calibration, and type the percentage it reports. The allowance is
-back-solved from the tokens currently counted, which makes the estimate accurate for
-your specific plan. Until you do, the panel shows an amber dot and the word
-*estimated*.
+```jsonc
+{ "five_hour": { "utilization": 32.0, "resets_at": "2026-07-29T01:39:59+00:00" },
+  "limits": [ { "kind": "session", "percent": 32, "resets_at": "...", "is_active": true } ] }
+```
 
-**Live usage** (experimental, off by default). Reads the Claude Code OAuth token from
-your keychain and fetches the real percentage. This endpoint is undocumented and not
-part of Anthropic's public API — it can break on any Claude Code update, so every
-failure path falls back silently to the local estimate.
+The percentage and reset time come straight from there. Better still, an authoritative
+percentage plus an exact local token count *implies the allowance* — so the app
+continuously calibrates itself, and all four readouts stay consistent. Utilisation is
+reported as a whole percent, so each sample carries ~1pp of quantisation error; the
+implied allowance is smoothed rather than overwritten to stop it wandering.
+
+This endpoint is **not** part of Anthropic's public API and can change on any Claude
+Code update. Every failure path falls back silently to the local estimate, which by
+then has a real allowance to work from.
+
+**Manual calibration.** If you'd rather not touch the keychain, turn live usage off,
+run `/usage` in any session, and type the percentage into Settings & Calibration. The
+allowance is back-solved the same way. Until the app has a real number from either
+route, the panel shows an amber dot and the word *estimated*.
+
+> The local five-hour block math is a good approximation but not authoritative: it
+> only sees transcripts on this machine, so usage from claude.ai or another Mac is
+> invisible to it, and the window start it infers can be off. Prefer live usage.
+
+**Keychain access.** macOS prompts the first time the app reads the token. Because the
+bundle is ad-hoc signed, its signature changes on every rebuild, so the prompt returns
+after each `make install`. Click *Always Allow*.
 
 Note that raw totals are dominated by cache reads (~97% of tokens in practice), which
 are far cheaper than output tokens. Calibration absorbs that skew for a typical usage

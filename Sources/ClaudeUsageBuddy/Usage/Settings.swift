@@ -20,6 +20,7 @@ enum Settings {
         static let allowance = "allowance"
         static let useServer = "useServerUsage"
         static let showHairline = "showHairlineGauge"
+        static let hasCalibrated = "hasCalibrated"
     }
 
     static var allowance: Int {
@@ -30,9 +31,11 @@ enum Settings {
         set { d.set(max(newValue, 1), forKey: Key.allowance) }
     }
 
-    /// Opt-in: read the Keychain OAuth token and ask Anthropic for the real number.
+    /// On by default: read the Keychain OAuth token and ask Anthropic for the real
+    /// number. Verified working against Claude Code 2.1.220, and every failure path
+    /// falls back to the local estimate, so there is no downside to leaving it on.
     static var useServerUsage: Bool {
-        get { d.bool(forKey: Key.useServer) }
+        get { d.object(forKey: Key.useServer) as? Bool ?? true }
         set { d.set(newValue, forKey: Key.useServer) }
     }
 
@@ -41,10 +44,18 @@ enum Settings {
         set { d.set(newValue, forKey: Key.showHairline) }
     }
 
+    /// False while `allowance` is still the placeholder, so the first real
+    /// measurement can replace it outright instead of being averaged into it.
+    static var hasCalibrated: Bool {
+        get { d.bool(forKey: Key.hasCalibrated) }
+        set { d.set(newValue, forKey: Key.hasCalibrated) }
+    }
+
     /// Back-solve the allowance from a percentage observed in `/usage`.
     /// If 43.6M tokens is reportedly 17%, the allowance is ~256M.
     static func calibrate(observedPercent: Double, tokensUsed: Int) {
         guard observedPercent > 0.5, tokensUsed > 0 else { return }
         allowance = Int((Double(tokensUsed) / (observedPercent / 100)).rounded())
+        hasCalibrated = true
     }
 }

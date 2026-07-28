@@ -70,12 +70,12 @@ struct SettingsView: View {
                         }
                     }
 
-                Toggle("Use live usage from Anthropic (experimental)", isOn: $useServer)
+                Toggle("Use live usage from Anthropic", isOn: $useServer)
                     .onChange(of: useServer) { _, v in
                         Settings.useServerUsage = v
                         store.refresh()
                     }
-                Text("Reads the Claude Code OAuth token from your keychain to fetch the real percentage. The endpoint is undocumented and may stop working after a Claude Code update — the local estimate is used whenever it does.")
+                Text("Reads the Claude Code OAuth token from your keychain and fetches the real percentage, then works backwards to your token allowance. The endpoint is undocumented and may stop working after a Claude Code update — the local estimate takes over whenever it does, using the last allowance learned here.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

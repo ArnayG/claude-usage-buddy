@@ -1,14 +1,21 @@
 import Foundation
 
-/// Optional, opt-in path to the authoritative usage percentage.
+/// The authoritative usage percentage, straight from the endpoint Claude Code uses
+/// to render `/usage`.
 ///
-/// IMPORTANT: this endpoint is not part of Anthropic's public API. It is whatever
-/// Claude Code itself calls to render `/usage`, and it can change or disappear on
-/// any update. Everything here is written to fail soft — any error at all leaves
-/// the local estimate in place. Never let this path break the app.
+/// Endpoint and response shape were confirmed against Claude Code 2.1.220 (the
+/// string `fetchUtilization: GET /api/oauth/usage` appears in the binary) and against
+/// a live 200 response. It is still **not** part of Anthropic's public API, so it can
+/// change or disappear on any update — every path here fails soft and leaves the
+/// local estimate in place. Never let this break the app.
 ///
-/// To confirm or correct the endpoint, run `claude --debug api`, invoke `/usage`,
-/// and read the request it makes.
+/// Observed payload:
+/// ```
+/// { "five_hour": { "utilization": 29.0, "resets_at": "2026-07-29T01:39:59.091876+00:00" },
+///   "seven_day": null,
+///   "limits": [ { "kind": "session", "group": "session", "percent": 29,
+///                 "resets_at": "...", "is_active": true }, ... ] }
+/// ```
 enum ServerUsageClient {
     static var endpoint = URL(string: "https://api.anthropic.com/api/oauth/usage")!
 
@@ -35,7 +42,7 @@ enum ServerUsageClient {
         request.timeoutInterval = 8
         request.setValue("Bearer \(creds.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
 
         let (data, response) = try await URLSession.shared.data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -47,47 +54,58 @@ enum ServerUsageClient {
         return try decode(json)
     }
 
-    /// Deliberately shape-tolerant: walks the payload looking for the numbers we
-    /// need instead of hard-binding to a schema that is not ours to depend on.
     private static func decode(_ json: [String: Any]) throws -> Report {
         var report = Report()
 
-        func visit(_ node: Any, path: String) {
-            guard let dict = node as? [String: Any] else {
-                if let arr = node as? [Any] {
-                    for item in arr { visit(item, path: path) }
-                }
-                return
-            }
-            let isWeekly = path.contains("7d") || path.contains("week")
-            let isSession = path.contains("5h") || path.contains("session")
+        // Preferred: the canonical `limits` array.
+        if let limits = json["limits"] as? [[String: Any]] {
+            for limit in limits {
+                let kind = limit["kind"] as? String ?? ""
+                let group = limit["group"] as? String ?? ""
+                let percent = number(limit["percent"])
+                let reset = (limit["resets_at"] as? String).flatMap(parseTimestamp)
 
-            for (key, value) in dict {
-                let lower = key.lowercased()
-                let childPath = path + "." + lower
-
-                if let number = value as? Double ?? (value as? Int).map(Double.init) {
-                    if lower.contains("utilization") || lower.contains("percent") || lower.contains("pct") {
-                        // Some payloads express utilisation as 0...1.
-                        let pct = number <= 1.0 ? number * 100 : number
-                        if isWeekly { report.weeklyPercent = pct }
-                        else if isSession || report.sessionPercent == nil { report.sessionPercent = pct }
-                    }
-                    if lower.contains("reset"), number > 1_000_000 {
-                        let seconds = number > 1e11 ? number / 1000 : number
-                        if !isWeekly { report.sessionResetsAt = Date(timeIntervalSince1970: seconds) }
-                    }
-                } else if let s = value as? String, lower.contains("reset"),
-                          let date = ISO8601DateFormatter().date(from: s) {
-                    if !isWeekly { report.sessionResetsAt = date }
-                } else {
-                    visit(value, path: childPath)
+                if kind == "session" || group == "session" {
+                    report.sessionPercent = percent ?? report.sessionPercent
+                    report.sessionResetsAt = reset ?? report.sessionResetsAt
+                } else if group == "weekly", let p = percent {
+                    // Several weekly buckets can be present (opus, sonnet, scoped).
+                    // The binding one is whichever is highest.
+                    report.weeklyPercent = max(report.weeklyPercent ?? 0, p)
                 }
             }
         }
 
-        visit(json, path: "")
+        // Fallback: the flat `five_hour` object.
+        if report.sessionPercent == nil, let fiveHour = json["five_hour"] as? [String: Any] {
+            report.sessionPercent = number(fiveHour["utilization"])
+            report.sessionResetsAt = (fiveHour["resets_at"] as? String).flatMap(parseTimestamp)
+        }
+        if report.weeklyPercent == nil, let sevenDay = json["seven_day"] as? [String: Any] {
+            report.weeklyPercent = number(sevenDay["utilization"])
+        }
+
         guard report.sessionPercent != nil else { throw Failure.unrecognisedShape }
         return report
+    }
+
+    private static func number(_ value: Any?) -> Double? {
+        if let d = value as? Double { return d }
+        if let i = value as? Int { return Double(i) }
+        return nil
+    }
+
+    /// Timestamps arrive with microsecond precision ("...:59.091876+00:00"), which
+    /// ISO8601DateFormatter will not parse — it handles milliseconds at most. Drop
+    /// the fractional part entirely; second precision is ample for a countdown.
+    static func parseTimestamp(_ raw: String) -> Date? {
+        var trimmed = raw
+        if let dot = raw.firstIndex(of: "."),
+           let tz = raw[dot...].firstIndex(where: { $0 == "+" || $0 == "-" || $0 == "Z" }) {
+            trimmed = String(raw[raw.startIndex..<dot]) + String(raw[tz...])
+        }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: trimmed)
     }
 }

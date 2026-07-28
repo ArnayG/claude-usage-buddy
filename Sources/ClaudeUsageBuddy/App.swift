@@ -37,6 +37,33 @@ enum Main {
 
         let weekly = UsageBlock.trailingWeek(from: entries, now: now)
 
+        // Same server path the app uses, run synchronously for the CLI.
+        var serverLine = "off"
+        if Settings.useServerUsage {
+            let gate = DispatchSemaphore(value: 0)
+            nonisolated(unsafe) var outcome = "unavailable"
+            nonisolated(unsafe) var fetched: ServerUsageClient.Report?
+            Task.detached {
+                do {
+                    let report = try await ServerUsageClient.fetch()
+                    fetched = report
+                    outcome = "ok"
+                } catch {
+                    outcome = "unavailable (\(error))"
+                }
+                gate.signal()
+            }
+            _ = gate.wait(timeout: .now() + 12)
+            serverLine = outcome
+            if let report = fetched {
+                snapshot.serverPercent = report.sessionPercent
+                if let reset = report.sessionResetsAt { snapshot.resetAt = reset }
+                if let pct = report.sessionPercent, pct >= 5, snapshot.used > 0 {
+                    snapshot.allowance = Int((Double(snapshot.used) / (pct / 100)).rounded())
+                }
+            }
+        }
+
         print("""
         Claude Usage Buddy
           entries parsed : \(entries.count)
@@ -45,8 +72,9 @@ enum Main {
             output       : \(Format.exact(snapshot.counts.output))
             cache write  : \(Format.exact(snapshot.counts.cacheCreation))
             cache read   : \(Format.exact(snapshot.counts.cacheRead))
-          allowance      : \(Format.exact(snapshot.allowance))
-          used           : \(String(format: "%.2f", snapshot.percent))%\(snapshot.isEstimated ? " (estimated)" : "")
+          allowance      : \(Format.exact(snapshot.allowance))\(snapshot.isEstimated ? "" : " (implied by server %)")
+          used           : \(String(format: "%.2f", snapshot.percent))%\(snapshot.isEstimated ? " (estimated)" : " (live from Anthropic)")
+          server         : \(serverLine)
           window start   : \(snapshot.blockStart.map(Format.time) ?? "—")
           resets at      : \(snapshot.resetAt.map(Format.time) ?? "—")
           resets in      : \(snapshot.resetAt.map { Format.duration(max($0.timeIntervalSince(now), 0)) } ?? "—")
