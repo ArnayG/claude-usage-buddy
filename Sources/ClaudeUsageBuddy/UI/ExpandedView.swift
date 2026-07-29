@@ -6,7 +6,7 @@ struct ExpandedView: View {
     let snapshot: UsageSnapshot
     /// Ticks once a second so the countdown stays live.
     let now: Date
-    var onCalibrate: () -> Void
+    var onRefresh: () -> Void
 
     /// Height of the physical cutout; content must clear it.
     private let notchInset: CGFloat = 32
@@ -94,48 +94,36 @@ struct ExpandedView: View {
 
             Spacer()
 
-            // Always available: accuracy decays as the window fills, and a second
-            // reading is what upgrades a guess into a solved number.
-            Button(action: onCalibrate) {
-                Text(snapshot.isEstimated ? "Calibrate" : "Recalibrate")
+            Button(action: onRefresh) {
+                Text("Refresh")
                     .font(.system(size: 10.5, weight: .semibold))
                     .foregroundStyle(Theme.primaryText.opacity(0.9))
                     .padding(.horizontal, 9)
                     .padding(.vertical, 3.5)
-                    .background(
-                        Capsule().fill(Color.white.opacity(0.11))
-                    )
-                    .overlay(
-                        Capsule().stroke(Color.white.opacity(0.13), lineWidth: 1)
-                    )
+                    .background(Capsule().fill(Color.white.opacity(0.11)))
+                    .overlay(Capsule().stroke(Color.white.opacity(0.13), lineWidth: 1))
             }
             .buttonStyle(.plain)
         }
     }
 
     private var statusColour: Color {
-        if snapshot.isEstimated { return Theme.warn.opacity(0.7) }
-        return snapshot.isTwoPoint ? Theme.ok : Theme.warn.opacity(0.55)
+        if snapshot.isUnverified || snapshot.probeError != nil { return Theme.warn.opacity(0.7) }
+        return snapshot.isStale(now: now) ? Theme.warn.opacity(0.55) : Theme.ok
     }
 
-    /// Distinguishes the three accuracy tiers honestly rather than calling them all
-    /// "calibrated": a guess, a single reading that may hide invisible usage, and a
-    /// two-point solve that accounts for it.
+    /// Says where the number came from and how fresh it is, rather than implying a
+    /// live feed. The probe runs every few minutes, not continuously.
     private var statusText: String {
-        guard let at = snapshot.calibratedAt else { return "not calibrated" }
-        let age = Format.duration(max(now.timeIntervalSince(at), 0))
-        if snapshot.isTwoPoint {
-            return snapshot.hiddenTokens > 0
-                ? "solved · \(Format.compact(snapshot.hiddenTokens)) off-device · \(age) ago"
-                : "solved · \(age) ago"
-        }
-        return "1 reading · \(age) ago"
+        if let error = snapshot.probeError, snapshot.isUnverified { return "/usage — \(error)" }
+        guard let probedAt = snapshot.probedAt else { return "reading /usage…" }
+        let age = now.timeIntervalSince(probedAt)
+        let suffix = snapshot.probeError == nil ? "" : " · retrying"
+        if age < 75 { return "from /usage · just now" + suffix }
+        return "from /usage · \(Format.duration(age)) ago" + suffix
     }
 
-    private var subtitle: String {
-        if snapshot.resetSource == .inferred { return "this 5-hour window · reset approx." }
-        return "this 5-hour window"
-    }
+    private var subtitle: String { "this 5-hour window" }
 
     private var resetCountdown: String {
         guard let at = snapshot.resetAt else { return "—" }

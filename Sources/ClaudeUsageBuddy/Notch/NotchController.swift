@@ -21,7 +21,7 @@ final class NotchController {
     /// Grace period so a brief exit at the panel edge does not slam it shut.
     private let closeDelay: TimeInterval = 0.25
 
-    var onCalibrate: () -> Void = {}
+    var onRefresh: () -> Void = {}
 
     init(store: UsageStore) {
         self.store = store
@@ -50,8 +50,8 @@ final class NotchController {
         let hover = HoverView(frame: CGRect(origin: .zero, size: frame.size))
         hover.autoresizingMask = [.width, .height]
 
-        let root = NotchRootView(state: state, store: store, onCalibrate: { [weak self] in
-            self?.onCalibrate()
+        let root = NotchRootView(state: state, store: store, onRefresh: { [weak self] in
+            self?.onRefresh()
         })
         let hosting = NSHostingView(rootView: root)
         hosting.frame = hover.bounds
@@ -205,14 +205,14 @@ private struct PeekRootView: View {
 private struct NotchRootView: View {
     @ObservedObject var state: PanelState
     @ObservedObject var store: UsageStore
-    var onCalibrate: () -> Void
+    var onRefresh: () -> Void
 
     var body: some View {
         Group {
             if state.isExpanded {
                 ExpandedView(snapshot: store.snapshot,
                              now: state.now,
-                             onCalibrate: onCalibrate)
+                             onRefresh: onRefresh)
                     .transition(.opacity)
             } else {
                 CollapsedView(fraction: store.snapshot.fraction,

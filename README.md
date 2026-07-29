@@ -17,8 +17,7 @@ your current Claude session window you've used and when it resets.
    ╰────────────────────────────────────╯
 ```
 
-Three readouts, by design: **tokens used**, **percentage**, **reset time** — plus a
-Recalibrate button, because accuracy is something you top up rather than set once.
+Three readouts, by design: **tokens used**, **percentage**, **reset time**.
 
 And a buddy, who is having a progressively worse time as you spend your window.
 
@@ -98,41 +97,40 @@ from that exact moment — *not* from the top of the hour. Anthropic's own reset
 land on precise seconds (one observed here reset at 21:39:59, so it opened at
 16:39:59), so rounding down to the hour would shift the countdown by up to an hour.
 
-## Calibration
-
-There are two independent reasons a locally-computed percentage can be wrong:
-
-1. **The denominator is unknown.** Anthropic publishes no token cap for the rolling
-   session window, and it varies by plan and tier.
-2. **The numerator is short.** Transcripts only cover Claude Code *on this Mac*. Usage
-   from claude.ai, the desktop app, or another machine is invisible here.
-
-A single reading can only fix the first, and it silently absorbs the second into the
-allowance — which is why one calibration drifts.
-
-**Two readings fix both.** The hidden baseline is the same in each, so it cancels:
+## Where the numbers come from
 
 ```
-allowance = Δtokens / Δpercent          ← hidden usage cancels in the subtraction
-hidden    = allowance × percent₁ − tokens₁
+percentage + reset time   ←  claude -p "/usage"      (authoritative, free)
+token count               ←  ~/.claude transcripts   (exact, real-time)
 ```
 
-Against a simulated ground truth of a 300M allowance with 40M spent off-device:
+Earlier versions tried to *infer* the percentage: back-solving a token allowance from
+a number you typed in, then solving a two-point system for usage it could not see. It
+was never going to be right. Anthropic's session window resets on its own schedule,
+and transcripts cannot see claude.ai or another machine — so the app would happily
+report 57% while the real window had already rolled over to 0%.
 
-| | allowance error | reported % (truth 63.3%) |
-|---|---|---|
-| One reading | 39.4% | 82.5% |
-| Two readings | **0.0%** | **63.0%** |
+Claude Code already knows the answer, and will tell you:
 
-So: run `/usage` in Claude Code, hit **Recalibrate** on the panel and enter the
-percentage. Do it again once usage has moved a few percent. The footer tells you which
-tier you're on — *not calibrated* (amber), *1 reading* (amber), or *solved* (green),
-with the off-device total it worked out.
+```
+$ claude -p "/usage"
+Current session: 5% used · resets Jul 29 at 2:40am (America/Indianapolis)
+```
 
-Optionally enter the reset time too, which pins the current window exactly. Worth doing
-for the same reason: an inferred window start can be late when the real window opened
-off-device. A pinned reset expires by itself once it passes, after which the countdown
-goes back to being inferred and is labelled *reset approx.*
+Measured on Claude Code 2.1.220, that takes ~1.1s and **costs nothing** — the request
+count reported by `/usage` was identical across three consecutive probes. It also needs
+no credentials of ours: the CLI handles its own auth, so there is still no keychain
+access and no password prompt.
+
+The app runs it every 4 minutes, on opening the panel, and immediately **on waking from
+sleep** — sleep freezes every timer, and the window may have rolled over entirely while
+the lid was shut.
+
+Transcripts still supply the token count, which `/usage` does not report. The window is
+defined by the probe's reset time (`start = reset − 5h`), so only tokens inside the real
+window are counted.
+
+There is nothing to calibrate, and no settings that affect accuracy.
 
 ## Layout
 

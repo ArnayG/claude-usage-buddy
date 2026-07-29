@@ -24,6 +24,8 @@ enum Main {
             exit(0)
         }
 
+        Settings.removeLegacyKeys()
+
         let app = NSApplication.shared
         let delegate = AppDelegate()
         Self.delegate = delegate
@@ -35,50 +37,46 @@ enum Main {
     /// Headless readout of exactly what the notch would show.
     @MainActor
     private static func printUsageAndExit() -> Never {
-        let scanner = TranscriptScanner()
-        let entries = scanner.scan()
-        let now = Date()
-        let block = UsageBlock.current(from: entries, now: now)
+        print("Claude Usage Buddy")
+        print("  claude CLI     : \(UsageProbe.locateCLI()?.path ?? "NOT FOUND")")
 
-        var snapshot = UsageSnapshot.empty
-        snapshot.counts = block?.counts ?? TokenCounts()
-        snapshot.allowance = Settings.allowance
-        snapshot.blockStart = block?.start
-        snapshot.resetAt = block?.end
-        snapshot.resetSource = block == nil ? .unknown : .inferred
-        if let pinned = Settings.overrideResetAt {
-            snapshot.resetAt = pinned
-            snapshot.blockStart = pinned.addingTimeInterval(-UsageBlock.windowLength)
-            snapshot.resetSource = .pinned
+        var percent: Double?
+        var resetAt: Date?
+        var windowStart: Date?
+        do {
+            let probe = try UsageProbe.run()
+            percent = probe.percent
+            resetAt = probe.resetAt
+            windowStart = probe.resetAt?.addingTimeInterval(-UsageBlock.windowLength)
+            print("  /usage         : ok")
+        } catch {
+            print("  /usage         : FAILED — \(error)")
         }
 
+        let entries = TranscriptScanner().scan()
+        let now = Date()
+        // Fall back to the locally inferred window only if the probe failed.
+        let start = windowStart ?? UsageBlock.current(from: entries, now: now)?.start
+        var counts = TokenCounts()
+        if let start {
+            for e in entries where e.timestamp >= start { counts += e.counts }
+        }
         let weekly = UsageBlock.trailingWeek(from: entries, now: now)
-        let samples = Settings.calibrationSamples
 
         print("""
-        Claude Usage Buddy
           entries parsed : \(entries.count)
-          tokens used    : \(Format.exact(snapshot.used))
-            input        : \(Format.exact(snapshot.counts.input))
-            output       : \(Format.exact(snapshot.counts.output))
-            cache write  : \(Format.exact(snapshot.counts.cacheCreation))
-            cache read   : \(Format.exact(snapshot.counts.cacheRead))
-          allowance      : \(Format.exact(snapshot.allowance))\(samples > 0 ? " (calibrated, \(samples) reading\(samples == 1 ? "" : "s"))" : " (placeholder — not calibrated)")
-          used           : \(String(format: "%.2f", snapshot.percent))%
-          window start   : \(snapshot.blockStart.map(Format.time) ?? "—")
-          resets at      : \(snapshot.resetAt.map(Format.time) ?? "—") (\(resetLabel(snapshot.resetSource)))
-          resets in      : \(snapshot.resetAt.map { Format.duration(max($0.timeIntervalSince(now), 0)) } ?? "—")
+          tokens used    : \(Format.exact(counts.total))
+            input        : \(Format.exact(counts.input))
+            output       : \(Format.exact(counts.output))
+            cache write  : \(Format.exact(counts.cacheCreation))
+            cache read   : \(Format.exact(counts.cacheRead))
+          session used   : \(percent.map { String(format: "%.1f%%", $0) } ?? "unknown")
+          window start   : \(start.map(Format.time) ?? "—")\(windowStart == nil ? " (inferred locally)" : "")
+          resets at      : \(resetAt.map(Format.time) ?? "—")
+          resets in      : \(resetAt.map { Format.duration(max($0.timeIntervalSince(now), 0)) } ?? "—")
           last 7 days    : \(Format.exact(weekly.total))
         """)
         exit(0)
-    }
-
-    private static func resetLabel(_ source: ResetSource) -> String {
-        switch source {
-        case .pinned: return "pinned from /usage"
-        case .inferred: return "inferred from transcripts, approximate"
-        case .unknown: return "no active window"
-        }
     }
 }
 
@@ -88,13 +86,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var notch = NotchController(store: store)
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
-    private var calibrationWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         store.start()
 
-        notch.onCalibrate = { [weak self] in self?.openCalibration() }
+        notch.onRefresh = { [weak self] in self?.store.refresh() }
         notch.install()
 
         installStatusItem()
@@ -103,14 +100,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.refreshStatusTitle() }
             .store(in: &cancellables)
-
-        // First launch: ask for the one number that makes everything else exact.
-        // Delayed so the notch is on screen first and the prompt has context.
-        if !Settings.hasCalibrated && !Settings.promptedForCalibration {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                self?.openCalibration()
-            }
-        }
     }
 
     // MARK: - Status item
@@ -130,7 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func refreshStatusTitle() {
         let s = store.snapshot
-        statusItem?.button?.title = String(format: " %.0f%%", s.percent)
+        statusItem?.button?.title = s.isUnverified ? " —" : String(format: " %.0f%%", s.percent)
         statusItem?.menu = buildMenu()
     }
 
@@ -139,23 +128,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
 
         menu.addItem(disabled("Tokens used: \(Format.exact(s.used))"))
-        menu.addItem(disabled(String(format: "Session used: %.1f%%%@", s.percent,
-                                     s.isEstimated ? " (not calibrated)" : "")))
-        if s.hiddenTokens > 0 {
-            menu.addItem(disabled("  incl. \(Format.exact(s.hiddenTokens)) used off this Mac"))
+        if s.isUnverified {
+            menu.addItem(disabled("Session used: reading /usage…"))
+        } else {
+            menu.addItem(disabled(String(format: "Session used: %.1f%%", s.percent)))
         }
         if let reset = s.resetAt {
-            let approx = s.resetSource == .inferred ? " approx." : ""
-            menu.addItem(disabled("Resets \(Format.time(reset))\(approx) · in \(Format.duration(max(reset.timeIntervalSinceNow, 0)))"))
+            menu.addItem(disabled("Resets \(Format.time(reset)) · in \(Format.duration(max(reset.timeIntervalSinceNow, 0)))"))
         } else {
             menu.addItem(disabled("No active session window"))
+        }
+        if let error = s.probeError {
+            menu.addItem(disabled("⚠ /usage: \(error)"))
         }
         menu.addItem(.separator())
         menu.addItem(disabled("Last 7 days: \(Format.exact(store.weekly.total)) tokens"))
         menu.addItem(.separator())
 
-        menu.addItem(action("Refresh", #selector(refreshNow)))
-        menu.addItem(action(s.isEstimated ? "Calibrate…" : "Recalibrate…", #selector(openCalibrationMenu)))
+        menu.addItem(action("Refresh now", #selector(refreshNow)))
         menu.addItem(action("Settings…", #selector(openSettingsMenu), key: ","))
         menu.addItem(.separator())
         menu.addItem(action("Quit", #selector(quit), key: "q"))
@@ -176,15 +166,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func refreshNow() { store.refresh() }
     @objc private func openSettingsMenu() { openSettings() }
-    @objc private func openCalibrationMenu() { openCalibration() }
     @objc private func quit() { NSApp.terminate(nil) }
 
-    // MARK: - Windows
+    // MARK: - Settings
 
     /// `NSWindow.center()` uses the main screen, which on a multi-display setup can
-    /// put the window on an external monitor — away from the notch the app lives in,
-    /// where it is easy to miss entirely.
-    fileprivate static func centerOnNotchedScreen(_ window: NSWindow) {
+    /// put the window on an external monitor — away from the notch the app lives in.
+    private static func centreOnNotchedScreen(_ window: NSWindow) {
         guard let screen = NotchGeometry.notchedScreen() ?? NSScreen.main else {
             window.center()
             return
@@ -193,36 +181,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let size = window.frame.size
         window.setFrameOrigin(CGPoint(
             x: (visible.midX - size.width / 2).rounded(),
-            // Slightly above centre reads better and stays clear of the Dock.
             y: (visible.midY - size.height / 2 + visible.height * 0.08).rounded()
         ))
-    }
-
-    private func openCalibration() {
-        if let calibrationWindow {
-            calibrationWindow.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-
-        let window = NSWindow(
-            contentRect: CGRect(x: 0, y: 0, width: 440, height: 460),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "Calibrate"
-        window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: CalibrationPrompt(store: store) { [weak self] in
-            self?.calibrationWindow?.close()
-            self?.calibrationWindow = nil
-            self?.refreshStatusTitle()
-        })
-        Self.centerOnNotchedScreen(window)
-        calibrationWindow = window
-
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func openSettings() {
@@ -233,17 +193,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let window = NSWindow(
-            contentRect: CGRect(x: 0, y: 0, width: 460, height: 520),
+            contentRect: CGRect(x: 0, y: 0, width: 460, height: 320),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
         window.title = "Claude Usage Buddy"
-        window.contentView = NSHostingView(rootView: SettingsView(store: store) { [weak self] in
-            self?.openCalibration()
-        })
+        window.contentView = NSHostingView(rootView: SettingsView(store: store))
         window.isReleasedWhenClosed = false
-        Self.centerOnNotchedScreen(window)
+        Self.centreOnNotchedScreen(window)
         settingsWindow = window
 
         window.makeKeyAndOrderFront(nil)

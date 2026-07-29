@@ -28,48 +28,35 @@ struct UsageEntry {
     let model: String?
 }
 
-/// Where the reset time came from, which determines how confidently to show it.
-enum ResetSource: Equatable {
-    /// Copied from `/usage` — exact for the current window.
-    case pinned
-    /// Derived from the first transcript entry in the window. Approximate, because
-    /// transcripts only cover Claude Code on this Mac.
-    case inferred
-    case unknown
-}
-
-/// Everything the notch needs to render, in one value.
+/// Everything the notch needs to render.
+///
+/// The percentage and reset time come from `claude -p "/usage"` — Claude Code's own
+/// answer, so there is nothing to calibrate. Local transcripts supply only the token
+/// count, which `/usage` does not report.
 struct UsageSnapshot: Equatable {
-    var counts: TokenCounts
-    var allowance: Int
-    var blockStart: Date?
+    /// Tokens seen on this Mac within the authoritative window.
+    var counts = TokenCounts()
+    /// Straight from `/usage`.
+    var percent: Double = 0
     var resetAt: Date?
-    var resetSource: ResetSource = .unknown
-    /// Nil until the allowance has been measured against `/usage`.
-    var calibratedAt: Date?
-    /// True when the allowance came from two readings, so hidden usage was solved
-    /// for rather than absorbed into the denominator.
-    var isTwoPoint = false
-    /// Tokens used in this window that this Mac cannot see (claude.ai, another
-    /// machine). Zero unless two-point calibration has measured it.
-    var hiddenTokens = 0
+    var windowStart: Date?
+    /// When the probe last succeeded. Nil means we have never had a real answer.
+    var probedAt: Date?
+    /// Set when the last probe failed, for an honest footer.
+    var probeError: String?
 
-    static let empty = UsageSnapshot(counts: TokenCounts(), allowance: Defaults.allowance,
-                                     blockStart: nil, resetAt: nil)
+    static let empty = UsageSnapshot()
 
-    /// What the account has actually spent this window: what we can see, plus what
-    /// calibration proved was there but invisible.
-    var used: Int { counts.total + hiddenTokens }
-    var remaining: Int { max(allowance - used, 0) }
+    var used: Int { counts.total }
+    var fraction: Double { min(max(percent / 100, 0), 1) }
 
-    var fraction: Double {
-        guard allowance > 0 else { return 0 }
-        return min(max(Double(used) / Double(allowance), 0), 1)
+    /// True before the first successful probe — the numbers on screen are not yet
+    /// authoritative and the UI should say so.
+    var isUnverified: Bool { probedAt == nil }
+
+    /// `/usage` is cheap, so anything this old means probing is broken.
+    func isStale(now: Date = Date()) -> Bool {
+        guard let probedAt else { return true }
+        return now.timeIntervalSince(probedAt) > 15 * 60
     }
-
-    var percent: Double { fraction * 100 }
-
-    /// True while the allowance is an unverified guess. The UI must say so rather
-    /// than imply precision.
-    var isEstimated: Bool { calibratedAt == nil }
 }
