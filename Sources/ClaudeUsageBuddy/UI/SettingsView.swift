@@ -1,17 +1,15 @@
 import SwiftUI
 
-/// Calibration is the important control here.
+/// Calibration is the only thing here that affects accuracy.
 ///
-/// Anthropic does not publish a token cap for the rolling session window, so the
-/// only way to turn a token count into a trustworthy percentage is to anchor it to
-/// a number the user can read off `/usage`. Enter that percentage and the allowance
-/// is back-solved from the tokens currently counted.
+/// Anthropic doesn't publish a token cap for the rolling session window, so the only
+/// way to turn an exact token count into a trustworthy percentage is to anchor it to
+/// a number read off `/usage`.
 struct SettingsView: View {
     @ObservedObject var store: UsageStore
+    var onRecalibrate: () -> Void
 
     @State private var allowanceText: String = ""
-    @State private var observedPercent: String = ""
-    @State private var useServer: Bool = Settings.useServerUsage
     @State private var showGauge: Bool = Settings.showHairlineGauge
     @State private var launchAtLogin: Bool = LoginItem.isEnabled
     @State private var note: String?
@@ -22,19 +20,17 @@ struct SettingsView: View {
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Calibrate from /usage")
-                        .font(.headline)
-                    Text("Run `/usage` in any Claude Code session and type the session percentage it reports. The allowance is recalculated from the \(Format.exact(store.snapshot.used)) tokens counted in the current window.")
+                    Text("Calibration").font(.headline)
+                    Text(store.snapshot.isEstimated
+                         ? "Not calibrated yet — the percentage is measured against a placeholder allowance and should not be trusted."
+                         : "Calibrated from \(Settings.calibrationSamples) reading\(Settings.calibrationSamples == 1 ? "" : "s") of /usage. Recalibrate any time it drifts.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-
                     HStack {
-                        TextField("e.g. 17", text: $observedPercent)
-                            .frame(width: 90)
-                        Text("%").foregroundStyle(.secondary)
-                        Button("Calibrate") { calibrate() }
-                            .disabled(Double(observedPercent) == nil || store.snapshot.used == 0)
+                        Button(store.snapshot.isEstimated ? "Calibrate…" : "Recalibrate…") {
+                            onRecalibrate()
+                        }
                         Spacer()
                     }
                 }
@@ -43,11 +39,11 @@ struct SettingsView: View {
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Token allowance")
-                        .font(.headline)
+                    Text("Token allowance").font(.headline)
+                    Text("Set directly if you already know your limit.")
+                        .font(.caption).foregroundStyle(.secondary)
                     HStack {
-                        TextField("tokens", text: $allowanceText)
-                            .frame(width: 160)
+                        TextField("tokens", text: $allowanceText).frame(width: 160)
                         Button("Save") { saveAllowance() }
                         Spacer()
                         Text(Format.compact(Settings.allowance))
@@ -69,29 +65,22 @@ struct SettingsView: View {
                             note = "Could not change the login item. Move the app to /Applications and try again."
                         }
                     }
-
-                Toggle("Use live usage from Anthropic", isOn: $useServer)
-                    .onChange(of: useServer) { _, v in
-                        Settings.useServerUsage = v
-                        store.refresh()
-                    }
-                Text("Reads the Claude Code OAuth token from your keychain and fetches the real percentage, then works backwards to your token allowance. The endpoint is undocumented and may stop working after a Claude Code update — the local estimate takes over whenever it does, using the last allowance learned here.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
+            Text("Everything is read from ~/.claude transcripts already on this Mac. No network access, no keychain, no credentials.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             if let note {
-                Text(note)
-                    .font(.callout)
-                    .foregroundStyle(.orange)
+                Text(note).font(.callout).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer()
         }
         .padding(22)
-        .frame(width: 460, height: 570)
+        .frame(width: 460, height: 520)
         .onAppear { allowanceText = String(Settings.allowance) }
     }
 
@@ -103,13 +92,6 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
         }
-    }
-
-    private func calibrate() {
-        guard let pct = Double(observedPercent) else { return }
-        store.calibrate(observedPercent: pct)
-        allowanceText = String(Settings.allowance)
-        note = "Allowance set to \(Format.exact(Settings.allowance)) tokens."
     }
 
     private func saveAllowance() {

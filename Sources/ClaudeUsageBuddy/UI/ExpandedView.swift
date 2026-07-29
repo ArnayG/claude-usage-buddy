@@ -4,7 +4,6 @@ import SwiftUI
 /// tokens used → allowance → percentage → reset.
 struct ExpandedView: View {
     let snapshot: UsageSnapshot
-    let serverNote: String?
     /// Ticks once a second so the countdown stays live.
     let now: Date
     var onCalibrate: () -> Void
@@ -97,28 +96,19 @@ struct ExpandedView: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                Text(syncLabel)
+                Text("calibrated")
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(Theme.tertiaryText)
             }
 
             Spacer()
 
-            if let note = serverNote {
-                Text(note)
+            if snapshot.resetSource == .inferred {
+                Text("reset approx.")
                     .font(.system(size: 10.5))
                     .foregroundStyle(Theme.tertiaryText)
             }
         }
-    }
-
-    /// The endpoint is rate limited, so a sync is periodic rather than constant.
-    /// Say when it last happened instead of implying a live feed.
-    private var syncLabel: String {
-        guard let synced = snapshot.serverSyncedAt else { return "calibrated" }
-        let age = now.timeIntervalSince(synced)
-        if age < 90 { return "verified with Anthropic just now" }
-        return "verified with Anthropic \(Format.duration(age)) ago"
     }
 
     private var resetCountdown: String {

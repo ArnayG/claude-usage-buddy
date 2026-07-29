@@ -12,6 +12,18 @@ enum Main {
         if CommandLine.arguments.contains("--print-usage") {
             printUsageAndExit()
         }
+        if CommandLine.arguments.contains("--enable-login-item") {
+            let ok = LoginItem.set(true)
+            print(ok ? "Launch at login: enabled (\(LoginItem.isEnabled ? "confirmed" : "pending approval"))"
+                     : "Launch at login: failed — move the app to /Applications first")
+            exit(ok ? 0 : 1)
+        }
+        if CommandLine.arguments.contains("--disable-login-item") {
+            _ = LoginItem.set(false)
+            print("Launch at login: disabled")
+            exit(0)
+        }
+
         let app = NSApplication.shared
         let delegate = AppDelegate()
         Self.delegate = delegate
@@ -20,8 +32,7 @@ enum Main {
         app.run()
     }
 
-    /// Headless readout of exactly what the notch would show. Handy for sanity
-    /// checks against `/usage` without needing to hover.
+    /// Headless readout of exactly what the notch would show.
     @MainActor
     private static func printUsageAndExit() -> Never {
         let scanner = TranscriptScanner()
@@ -34,36 +45,15 @@ enum Main {
         snapshot.allowance = Settings.allowance
         snapshot.blockStart = block?.start
         snapshot.resetAt = block?.end
+        snapshot.resetSource = block == nil ? .unknown : .inferred
+        if let pinned = Settings.overrideResetAt {
+            snapshot.resetAt = pinned
+            snapshot.blockStart = pinned.addingTimeInterval(-UsageBlock.windowLength)
+            snapshot.resetSource = .pinned
+        }
 
         let weekly = UsageBlock.trailingWeek(from: entries, now: now)
-
-        // Same server path the app uses, run synchronously for the CLI.
-        var serverLine = "off"
-        if Settings.useServerUsage {
-            let gate = DispatchSemaphore(value: 0)
-            nonisolated(unsafe) var outcome = "unavailable"
-            nonisolated(unsafe) var fetched: ServerUsageClient.Report?
-            Task.detached {
-                do {
-                    let report = try await ServerUsageClient.fetch()
-                    fetched = report
-                    outcome = "ok"
-                } catch {
-                    outcome = "unavailable (\(error))"
-                }
-                gate.signal()
-            }
-            _ = gate.wait(timeout: .now() + 12)
-            serverLine = outcome
-            if let report = fetched {
-                snapshot.serverSyncedAt = Date()
-                if let reset = report.sessionResetsAt { snapshot.resetAt = reset }
-                if let pct = report.sessionPercent, pct >= 5, snapshot.used > 0 {
-                    snapshot.allowance = Int((Double(snapshot.used) / (pct / 100)).rounded())
-                    serverLine = "ok (reported \(String(format: "%.0f", pct))%)"
-                }
-            }
-        }
+        let samples = Settings.calibrationSamples
 
         print("""
         Claude Usage Buddy
@@ -73,15 +63,22 @@ enum Main {
             output       : \(Format.exact(snapshot.counts.output))
             cache write  : \(Format.exact(snapshot.counts.cacheCreation))
             cache read   : \(Format.exact(snapshot.counts.cacheRead))
-          allowance      : \(Format.exact(snapshot.allowance))\(snapshot.isEstimated ? "" : " (implied by server %)")
-          used           : \(String(format: "%.2f", snapshot.percent))%\(snapshot.isEstimated ? " (estimated)" : " (calibrated)")
-          server         : \(serverLine)
+          allowance      : \(Format.exact(snapshot.allowance))\(samples > 0 ? " (calibrated, \(samples) reading\(samples == 1 ? "" : "s"))" : " (placeholder — not calibrated)")
+          used           : \(String(format: "%.2f", snapshot.percent))%
           window start   : \(snapshot.blockStart.map(Format.time) ?? "—")
-          resets at      : \(snapshot.resetAt.map(Format.time) ?? "—")
+          resets at      : \(snapshot.resetAt.map(Format.time) ?? "—") (\(resetLabel(snapshot.resetSource)))
           resets in      : \(snapshot.resetAt.map { Format.duration(max($0.timeIntervalSince(now), 0)) } ?? "—")
           last 7 days    : \(Format.exact(weekly.total))
         """)
         exit(0)
+    }
+
+    private static func resetLabel(_ source: ResetSource) -> String {
+        switch source {
+        case .pinned: return "pinned from /usage"
+        case .inferred: return "inferred from transcripts, approximate"
+        case .unknown: return "no active window"
+        }
     }
 }
 
@@ -91,28 +88,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var notch = NotchController(store: store)
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
+    private var calibrationWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         store.start()
 
-        notch.onCalibrate = { [weak self] in self?.openSettings() }
+        notch.onCalibrate = { [weak self] in self?.openCalibration() }
         notch.install()
 
         installStatusItem()
 
-        // Keep the menu bar summary in step with the panel.
         store.$snapshot
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.refreshStatusTitle() }
             .store(in: &cancellables)
+
+        // First launch: ask for the one number that makes everything else exact.
+        // Delayed so the notch is on screen first and the prompt has context.
+        if !Settings.hasCalibrated && !Settings.promptedForCalibration {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.openCalibration()
+            }
+        }
     }
 
     // MARK: - Status item
     //
-    // Serves two purposes beyond convenience: it is the fallback surface on Macs
-    // with no notch, and it makes the app reachable without hovering, which a
-    // hover-only UI would not be.
+    // The fallback surface on Macs with no notch, and the keyboard-reachable path,
+    // which a hover-only UI would not be.
 
     private func installStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -135,11 +139,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
 
         menu.addItem(disabled("Tokens used: \(Format.exact(s.used))"))
-        menu.addItem(disabled("Allowance: \(Format.exact(s.allowance))"))
-        menu.addItem(disabled(String(format: "Session used: %.1f%%%@",
-                                     s.percent, s.isEstimated ? " (estimated)" : "")))
+        menu.addItem(disabled("Allowance: \(Format.exact(s.allowance))\(s.isEstimated ? " (not calibrated)" : "")"))
+        menu.addItem(disabled(String(format: "Session used: %.1f%%", s.percent)))
         if let reset = s.resetAt {
-            menu.addItem(disabled("Resets \(Format.time(reset)) · in \(Format.duration(max(reset.timeIntervalSinceNow, 0)))"))
+            let approx = s.resetSource == .inferred ? " approx." : ""
+            menu.addItem(disabled("Resets \(Format.time(reset))\(approx) · in \(Format.duration(max(reset.timeIntervalSinceNow, 0)))"))
         } else {
             menu.addItem(disabled("No active session window"))
         }
@@ -148,7 +152,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
 
         menu.addItem(action("Refresh", #selector(refreshNow)))
-        menu.addItem(action("Settings & Calibration…", #selector(openSettingsMenu), key: ","))
+        menu.addItem(action(s.isEstimated ? "Calibrate…" : "Recalibrate…", #selector(openCalibrationMenu)))
+        menu.addItem(action("Settings…", #selector(openSettingsMenu), key: ","))
         menu.addItem(.separator())
         menu.addItem(action("Quit", #selector(quit), key: "q"))
         return menu
@@ -168,9 +173,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func refreshNow() { store.refresh() }
     @objc private func openSettingsMenu() { openSettings() }
+    @objc private func openCalibrationMenu() { openCalibration() }
     @objc private func quit() { NSApp.terminate(nil) }
 
-    // MARK: - Settings
+    // MARK: - Windows
+
+    /// `NSWindow.center()` uses the main screen, which on a multi-display setup can
+    /// put the window on an external monitor — away from the notch the app lives in,
+    /// where it is easy to miss entirely.
+    fileprivate static func centerOnNotchedScreen(_ window: NSWindow) {
+        guard let screen = NotchGeometry.notchedScreen() ?? NSScreen.main else {
+            window.center()
+            return
+        }
+        let visible = screen.visibleFrame
+        let size = window.frame.size
+        window.setFrameOrigin(CGPoint(
+            x: (visible.midX - size.width / 2).rounded(),
+            // Slightly above centre reads better and stays clear of the Dock.
+            y: (visible.midY - size.height / 2 + visible.height * 0.08).rounded()
+        ))
+    }
+
+    private func openCalibration() {
+        if let calibrationWindow {
+            calibrationWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 440, height: 460),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Calibrate"
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: CalibrationPrompt(store: store) { [weak self] in
+            self?.calibrationWindow?.close()
+            self?.calibrationWindow = nil
+            self?.refreshStatusTitle()
+        })
+        Self.centerOnNotchedScreen(window)
+        calibrationWindow = window
+
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
 
     private func openSettings() {
         if let settingsWindow {
@@ -180,15 +230,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let window = NSWindow(
-            contentRect: CGRect(x: 0, y: 0, width: 460, height: 570),
+            contentRect: CGRect(x: 0, y: 0, width: 460, height: 520),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
         window.title = "Claude Usage Buddy"
-        window.contentView = NSHostingView(rootView: SettingsView(store: store))
+        window.contentView = NSHostingView(rootView: SettingsView(store: store) { [weak self] in
+            self?.openCalibration()
+        })
         window.isReleasedWhenClosed = false
-        window.center()
+        Self.centerOnNotchedScreen(window)
         settingsWindow = window
 
         window.makeKeyAndOrderFront(nil)

@@ -169,7 +169,6 @@ private struct NotchRootView: View {
         Group {
             if state.isExpanded {
                 ExpandedView(snapshot: store.snapshot,
-                             serverNote: store.serverNote,
                              now: state.now,
                              onCalibrate: onCalibrate)
                     .transition(.opacity)

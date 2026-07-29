@@ -28,11 +28,14 @@ struct UsageEntry {
     let model: String?
 }
 
-enum UsageSource: String, Equatable {
-    /// Derived from ~/.claude/projects transcripts. Always available.
-    case local
-    /// Reported by Anthropic. Authoritative when reachable.
-    case server
+/// Where the reset time came from, which determines how confidently to show it.
+enum ResetSource: Equatable {
+    /// Copied from `/usage` — exact for the current window.
+    case pinned
+    /// Derived from the first transcript entry in the window. Approximate, because
+    /// transcripts only cover Claude Code on this Mac.
+    case inferred
+    case unknown
 }
 
 /// Everything the notch needs to render, in one value.
@@ -41,25 +44,16 @@ struct UsageSnapshot: Equatable {
     var allowance: Int
     var blockStart: Date?
     var resetAt: Date?
-    var source: UsageSource
-    /// When Anthropic last confirmed the real percentage, which is what calibrated
-    /// `allowance`. Nil means the allowance is still a guess.
-    var serverSyncedAt: Date?
+    var resetSource: ResetSource = .unknown
+    /// Nil until the allowance has been measured against `/usage`.
+    var calibratedAt: Date?
 
     static let empty = UsageSnapshot(counts: TokenCounts(), allowance: Defaults.allowance,
-                                     blockStart: nil, resetAt: nil, source: .local)
+                                     blockStart: nil, resetAt: nil)
 
     var used: Int { counts.total }
     var remaining: Int { max(allowance - used, 0) }
 
-    /// Always computed locally, from an exact token count and a calibrated
-    /// allowance.
-    ///
-    /// Deliberately *not* the server's percentage held as a stored value: the usage
-    /// endpoint is rate limited, so it can only be called every few minutes, and a
-    /// stored percentage would sit frozen between calls while tokens kept climbing.
-    /// The server's job is to calibrate `allowance`; the percentage then updates
-    /// continuously and still agrees with it.
     var fraction: Double {
         guard allowance > 0 else { return 0 }
         return min(max(Double(used) / Double(allowance), 0), 1)
@@ -69,10 +63,5 @@ struct UsageSnapshot: Equatable {
 
     /// True while the allowance is an unverified guess. The UI must say so rather
     /// than imply precision.
-    var isEstimated: Bool { serverSyncedAt == nil }
-
-    var timeUntilReset: TimeInterval? {
-        guard let resetAt else { return nil }
-        return max(resetAt.timeIntervalSinceNow, 0)
-    }
+    var isEstimated: Bool { calibratedAt == nil }
 }

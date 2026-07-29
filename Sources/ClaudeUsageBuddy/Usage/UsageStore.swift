@@ -2,33 +2,21 @@ import Combine
 import Foundation
 
 /// Single source of truth for the UI.
+///
+/// Entirely local: transcripts on disk plus whatever calibration you have entered.
+/// No network, no keychain, no credentials of any kind.
 @MainActor
 final class UsageStore: ObservableObject {
     @Published private(set) var snapshot = UsageSnapshot.empty
     @Published private(set) var weekly = TokenCounts()
-    /// Server-reported weekly utilisation, when the plan has a weekly bucket.
-    @Published private(set) var weeklyPercent: Double?
     @Published private(set) var lastUpdated: Date?
-    /// Set when the opt-in server path was tried and did not work.
-    @Published private(set) var serverNote: String?
 
     private let scanner = TranscriptScanner()
     private var timer: Timer?
     private var watcher: DirectoryWatcher?
-    private var isFetchingServer = false
-    private var lastServerAttempt: Date?
-    private var serverBackoff: TimeInterval = 0
 
     /// Slow heartbeat; the directory watcher supplies the fast path.
     private let pollInterval: TimeInterval = 15
-
-    /// Floor between usage-endpoint calls.
-    ///
-    /// This endpoint is rate limited — polling it on every local refresh earns a
-    /// 429 within the hour. It only needs to be called often enough to keep the
-    /// allowance calibrated and the reset time honest; the token count in between
-    /// comes from transcripts, for free.
-    private let serverMinInterval: TimeInterval = 300
 
     func start() {
         refresh()
@@ -51,109 +39,36 @@ final class UsageStore: ObservableObject {
             counts: block?.counts ?? TokenCounts(),
             allowance: Settings.allowance,
             blockStart: block?.start,
-            resetAt: block?.end,
-            source: .local
+            resetAt: block?.end
         )
-        // Carry the server's calibration forward between fetches. The reset time
-        // especially: the server knows the true window start, which the local block
-        // math can only infer from transcripts on this machine.
-        if let synced = snapshot.serverSyncedAt {
-            next.serverSyncedAt = synced
-            next.source = .server
-            if let serverReset = snapshot.resetAt, serverReset > now {
-                next.resetAt = serverReset
-            }
+        next.resetSource = block == nil ? .unknown : .inferred
+        next.calibratedAt = Settings.hasCalibrated ? (snapshot.calibratedAt ?? now) : nil
+
+        // A reset time copied from /usage beats anything inferred from transcripts,
+        // which cannot see usage from claude.ai or another machine. It expires by
+        // itself once it passes.
+        if let pinned = Settings.overrideResetAt {
+            next.resetAt = pinned
+            next.blockStart = pinned.addingTimeInterval(-UsageBlock.windowLength)
+            next.resetSource = .pinned
         }
 
         snapshot = next
         weekly = UsageBlock.trailingWeek(from: entries, now: now)
         lastUpdated = now
-
-        if Settings.useServerUsage { fetchServer() }
     }
 
     /// Recomputes the allowance from a percentage the user read off `/usage`.
-    func calibrate(observedPercent: Double) {
+    func calibrate(observedPercent: Double, resetAt: Date? = nil) {
         Settings.calibrate(observedPercent: observedPercent, tokensUsed: snapshot.used)
+        if let resetAt { Settings.overrideResetAt = resetAt }
+        snapshot.calibratedAt = Date()
         refresh()
     }
 
     func setAllowance(_ value: Int) {
         Settings.allowance = value
         refresh()
-    }
-
-    private func fetchServer() {
-        guard !isFetchingServer else { return }
-
-        // Respect the floor, and whatever backoff a previous failure imposed.
-        let gap = max(serverMinInterval, serverBackoff)
-        if let last = lastServerAttempt, Date().timeIntervalSince(last) < gap { return }
-
-        // Stamp before the request, so failures throttle too.
-        lastServerAttempt = Date()
-        isFetchingServer = true
-        Task { [weak self] in
-            defer { Task { @MainActor in self?.isFetchingServer = false } }
-            do {
-                let report = try await ServerUsageClient.fetch()
-                await MainActor.run {
-                    guard let self else { return }
-                    var s = self.snapshot
-                    s.serverSyncedAt = Date()
-                    // The server knows the true window start, which can predate
-                    // anything in the local transcripts (usage from claude.ai or
-                    // another machine). Always prefer its reset time.
-                    if let reset = report.sessionResetsAt { s.resetAt = reset }
-                    s.source = .server
-
-                    // Self-calibration: an authoritative percentage plus an exact
-                    // local token count implies the allowance. This keeps all four
-                    // readouts consistent and leaves the local fallback calibrated
-                    // for whenever the server is unreachable.
-                    if let pct = report.sessionPercent, pct >= 5, s.used > 0 {
-                        let implied = Double(s.used) / (pct / 100)
-                        // Utilisation comes back as a whole percent, so any single
-                        // sample carries up to ~1pp of quantisation error — enough
-                        // to make the implied allowance visibly wander. Blend into
-                        // the stored value instead of overwriting it.
-                        let value: Double
-                        if Settings.hasCalibrated {
-                            value = Double(Settings.allowance) * 0.8 + implied * 0.2
-                        } else {
-                            value = implied
-                            Settings.hasCalibrated = true
-                        }
-                        let rounded = Int(value.rounded())
-                        Settings.allowance = rounded
-                        s.allowance = rounded
-                    }
-
-                    self.snapshot = s
-                    self.weeklyPercent = report.weeklyPercent
-                    self.serverNote = nil
-                    self.serverBackoff = 0
-                }
-            } catch {
-                await MainActor.run {
-                    guard let self else { return }
-                    // Fail soft: the local estimate stays on screen, calibrated from
-                    // the last successful sync.
-                    switch error {
-                    case ServerUsageClient.Failure.badStatus(429):
-                        // Rate limited. Back off hard — the numbers on screen are
-                        // still live, they just stop being re-verified for a while.
-                        self.serverBackoff = min(max(self.serverBackoff * 2, 900), 3600)
-                        self.serverNote = "rate limited · retrying later"
-                    case ServerUsageClient.Failure.notEnabled:
-                        self.serverNote = nil
-                    default:
-                        self.serverBackoff = min(max(self.serverBackoff * 2, 60), 900)
-                        self.serverNote = "server sync unavailable"
-                    }
-                }
-            }
-        }
     }
 }
 

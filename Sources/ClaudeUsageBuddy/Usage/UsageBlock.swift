@@ -1,11 +1,13 @@
 import Foundation
 
-/// Claude's "session" limit is a rolling window, not a calendar period.
+/// Claude's "session" limit is a rolling window anchored to activity, not a calendar
+/// period. A window opens on the first request after a five-hour lull and runs for
+/// five hours from that moment.
 ///
-/// A block starts at the top of the hour containing its first request and runs for
-/// five hours. A gap of five hours or more with no requests also opens a new block.
-/// This mirrors how the usage window is described in-product and how `ccusage`
-/// reconstructs it from transcripts.
+/// The anchor is the request timestamp itself, **not** the top of the hour. Anthropic's
+/// own reset times land on precise seconds (a window observed here reset at 21:39:59,
+/// i.e. it opened at 16:39:59), so rounding down to the hour would shift the countdown
+/// by up to an hour in the wrong direction.
 enum UsageBlock {
     static let windowLength: TimeInterval = 5 * 3600
 
@@ -16,14 +18,7 @@ enum UsageBlock {
         func isActive(at now: Date) -> Bool { now < end }
     }
 
-    /// Floors to the top of the hour (UTC boundaries, which line up with local
-    /// hour boundaries for every timezone at whole-hour offsets).
-    static func floorToHour(_ date: Date) -> Date {
-        let t = date.timeIntervalSince1970
-        return Date(timeIntervalSince1970: (t / 3600).rounded(.down) * 3600)
-    }
-
-    /// Splits entries into blocks. Input need not be sorted.
+    /// Splits entries into windows. Input need not be sorted.
     static func blocks(from entries: [UsageEntry]) -> [Block] {
         guard !entries.isEmpty else { return [] }
         let sorted = entries.sorted { $0.timestamp < $1.timestamp }
@@ -44,7 +39,7 @@ enum UsageBlock {
 
             if opensNewBlock {
                 if let s = start { result.append(Block(start: s, counts: acc)) }
-                start = floorToHour(e.timestamp)
+                start = e.timestamp
                 acc = TokenCounts()
             }
             acc += e.counts
@@ -54,7 +49,7 @@ enum UsageBlock {
         return result
     }
 
-    /// The block covering `now`, if the window is still open.
+    /// The window covering `now`, if one is still open.
     static func current(from entries: [UsageEntry], now: Date = Date()) -> Block? {
         guard let last = blocks(from: entries).last, last.isActive(at: now) else { return nil }
         return last
