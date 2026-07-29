@@ -123,9 +123,24 @@ count reported by `/usage` was identical across three consecutive probes. It als
 no credentials of ours: the CLI handles its own auth, so there is still no keychain
 access and no password prompt.
 
-The app runs it every 4 minutes, on opening the panel, and immediately **on waking from
-sleep** — sleep freezes every timer, and the window may have rolled over entirely while
-the lid was shut.
+How often it runs is adaptive, because the percentage moves fast while you are working
+(8% to 14% inside a couple of minutes of heavy use) and not at all while you are not:
+
+| Condition | Cadence |
+|---|---|
+| New transcript activity since the last probe | every 60s |
+| Nothing happening locally | every 10 min |
+| Opening the panel | immediately, if >15s old |
+| Refresh button | always |
+| Waking from sleep | immediately |
+
+Sleep freezes every timer, and the window may have rolled over entirely while the lid
+was shut, so waking always re-probes. The idle cadence is what keeps the average cost
+down — the CLI spawn is the expensive part, and it is pointless when nothing has
+changed.
+
+Note the session window is **rolling**, not a fixed block: old requests age out of it,
+so the percentage falls as well as rises, and the reset time creeps forward.
 
 Transcripts still supply the token count, which `/usage` does not report. The window is
 defined by the probe's reset time (`start = reset − 5h`), so only tokens inside the real

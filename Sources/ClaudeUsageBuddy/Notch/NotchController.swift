@@ -212,6 +212,7 @@ private struct NotchRootView: View {
             if state.isExpanded {
                 ExpandedView(snapshot: store.snapshot,
                              now: state.now,
+                             isProbing: store.isProbing,
                              onRefresh: onRefresh)
                     .transition(.opacity)
             } else {

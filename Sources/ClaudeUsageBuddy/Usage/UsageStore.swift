@@ -20,15 +20,27 @@ final class UsageStore: ObservableObject {
     private var tokenTimer: Timer?
     private var probeTimer: Timer?
     private var watcher: DirectoryWatcher?
-    private var probing = false
+    /// Exposed so the Refresh button can show that something is happening.
+    @Published private(set) var isProbing = false
     private var lastProbeAttempt: Date?
+    /// Timestamp of the newest transcript entry seen, used to tell active from idle.
+    private var newestEntryAt: Date?
 
     /// Cheap: just re-reads appended transcript bytes.
     private let tokenInterval: TimeInterval = 15
-    /// Spawns the CLI (~1–3s), so keep it occasional. Costs no quota.
-    private let probeInterval: TimeInterval = 240
-    /// Floor for on-demand probes (opening the panel, waking from sleep).
-    private let probeFloor: TimeInterval = 25
+    /// How often the scheduler reconsiders probing.
+    private let schedulerInterval: TimeInterval = 20
+
+    /// While Claude is actually being used the percentage moves fast — 8% to 14% in
+    /// a couple of minutes of heavy work — so a slow poll shows a visibly wrong
+    /// number. Probe often when transcripts show new activity.
+    private let activeProbeInterval: TimeInterval = 60
+    /// When nothing is happening locally the only thing that can move the number is
+    /// usage on another device, so back right off. This is also what keeps the
+    /// average cost down: the CLI spawn is the expensive part.
+    private let idleProbeInterval: TimeInterval = 600
+    /// Guards only against double-clicks; a forced refresh ignores everything else.
+    private let forcedProbeFloor: TimeInterval = 3
 
     func start() {
         recomputeTokens()
@@ -37,8 +49,8 @@ final class UsageStore: ObservableObject {
         tokenTimer = Timer.scheduledTimer(withTimeInterval: tokenInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.recomputeTokens() }
         }
-        probeTimer = Timer.scheduledTimer(withTimeInterval: probeInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.probe() }
+        probeTimer = Timer.scheduledTimer(withTimeInterval: schedulerInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.probeIfDue() }
         }
 
         let root = FileManager.default.homeDirectoryForCurrentUser
@@ -57,10 +69,36 @@ final class UsageStore: ObservableObject {
         }
     }
 
-    /// Called when the panel opens, so it never shows a stale number.
+    /// Opening the panel: refresh if it is even slightly stale, since this is the
+    /// moment the number is actually being read.
     func refresh() {
         recomputeTokens()
-        probe()
+        if let last = lastProbeAttempt, Date().timeIntervalSince(last) < 15 { return }
+        probe(force: true)
+    }
+
+    /// The Refresh button. Always probes — an earlier version routed this through the
+    /// same throttle as the background poll, so clicking it did nothing at all and
+    /// left a stale percentage on screen.
+    func forceRefresh() {
+        recomputeTokens()
+        probe(force: true)
+    }
+
+    /// Fast while Claude is in use, slow when it is not.
+    private func probeIfDue() {
+        let now = Date()
+        let sinceProbe = lastProbeAttempt.map { now.timeIntervalSince($0) } ?? .infinity
+
+        // New assistant messages since the last probe means the percentage has moved.
+        let active: Bool = {
+            guard let newest = newestEntryAt, let last = lastProbeAttempt else { return true }
+            return newest > last
+        }()
+
+        if sinceProbe >= (active ? activeProbeInterval : idleProbeInterval) {
+            probe()
+        }
     }
 
     // MARK: - Tokens
@@ -81,6 +119,7 @@ final class UsageStore: ObservableObject {
             if entry.timestamp >= start { acc += entry.counts }
         }
         snapshot = next
+        newestEntryAt = entries.map(\.timestamp).max()
         weekly = UsageBlock.trailingWeek(from: entries, now: now)
         lastUpdated = now
     }
@@ -88,16 +127,17 @@ final class UsageStore: ObservableObject {
     // MARK: - Probe
 
     private func probe(force: Bool = false) {
-        guard !probing else { return }
-        if !force, let last = lastProbeAttempt, Date().timeIntervalSince(last) < probeFloor { return }
+        guard !isProbing else { return }
+        if let last = lastProbeAttempt, Date().timeIntervalSince(last) < forcedProbeFloor { return }
+        _ = force   // scheduling is decided by probeIfDue; this call always runs
         lastProbeAttempt = Date()
-        probing = true
+        isProbing = true
 
         Task.detached(priority: .utility) {
             let outcome = Result { try UsageProbe.run() }
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                self.probing = false
+                self.isProbing = false
                 switch outcome {
                 case .success(let result):
                     var next = self.snapshot

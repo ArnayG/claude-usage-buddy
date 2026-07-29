@@ -6,6 +6,7 @@ struct ExpandedView: View {
     let snapshot: UsageSnapshot
     /// Ticks once a second so the countdown stays live.
     let now: Date
+    var isProbing: Bool = false
     var onRefresh: () -> Void
 
     /// Height of the physical cutout; content must clear it.
@@ -95,7 +96,7 @@ struct ExpandedView: View {
             Spacer()
 
             Button(action: onRefresh) {
-                Text("Refresh")
+                Text(isProbing ? "Checking…" : "Refresh")
                     .font(.system(size: 10.5, weight: .semibold))
                     .foregroundStyle(Theme.primaryText.opacity(0.9))
                     .padding(.horizontal, 9)
@@ -115,6 +116,7 @@ struct ExpandedView: View {
     /// Says where the number came from and how fresh it is, rather than implying a
     /// live feed. The probe runs every few minutes, not continuously.
     private var statusText: String {
+        if isProbing { return "asking /usage…" }
         if let error = snapshot.probeError, snapshot.isUnverified { return "/usage — \(error)" }
         guard let probedAt = snapshot.probedAt else { return "reading /usage…" }
         let age = now.timeIntervalSince(probedAt)

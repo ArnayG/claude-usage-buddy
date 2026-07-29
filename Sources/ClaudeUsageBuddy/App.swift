@@ -91,7 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         store.start()
 
-        notch.onRefresh = { [weak self] in self?.store.refresh() }
+        notch.onRefresh = { [weak self] in self?.store.forceRefresh() }
         notch.install()
 
         installStatusItem()
@@ -164,7 +164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return item
     }
 
-    @objc private func refreshNow() { store.refresh() }
+    @objc private func refreshNow() { store.forceRefresh() }
     @objc private func openSettingsMenu() { openSettings() }
     @objc private func quit() { NSApp.terminate(nil) }
 
