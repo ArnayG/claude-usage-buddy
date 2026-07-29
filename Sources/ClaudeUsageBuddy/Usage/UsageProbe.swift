@@ -59,14 +59,21 @@ enum UsageProbe {
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = "\(binary.deletingLastPathComponent().path):/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin"
         env["HOME"] = FileManager.default.homeDirectoryForCurrentUser.path
-        // Keep the probe cheap and free of anything a project might inject.
-        env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+        // Do NOT set CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC here. It looks like a
+        // harmless way to keep the probe cheap, but it makes Claude Code skip the
+        // fresh utilization fetch and answer from cache — which silently pinned the
+        // reported percentage several points below the truth.
         process.environment = env
         process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
 
         let pipe = Pipe()
         process.standardOutput = pipe
-        process.standardError = Pipe()
+        // Discard rather than pipe: an unread stderr pipe deadlocks the child once it
+        // fills, and we never look at it anyway.
+        process.standardError = FileHandle.nullDevice
+        // Without this the CLI waits 3s for stdin that is never coming, tripling the
+        // wall time of every probe.
+        process.standardInput = FileHandle.nullDevice
 
         try process.run()
 
