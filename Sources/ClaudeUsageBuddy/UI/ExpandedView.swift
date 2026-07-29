@@ -29,7 +29,7 @@ struct ExpandedView: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
 
-                    Text("of \(Format.compact(snapshot.allowance)) allowed")
+                    Text(subtitle)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Theme.secondaryText)
                         .monospacedDigit()
@@ -80,35 +80,56 @@ struct ExpandedView: View {
     private var footer: some View {
         HStack(spacing: 6) {
             Circle()
-                .fill(snapshot.isEstimated ? Theme.warn.opacity(0.7) : Theme.ok)
+                .fill(statusColour)
                 .frame(width: 5, height: 5)
 
-            if snapshot.isEstimated {
-                Text("estimated")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(Theme.tertiaryText)
-                Text("·").foregroundStyle(Theme.tertiaryText).font(.system(size: 10.5))
-                Button(action: onCalibrate) {
-                    Text("calibrate")
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .foregroundStyle(Theme.secondaryText)
-                        .underline()
-                }
-                .buttonStyle(.plain)
-            } else {
-                Text("calibrated")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(Theme.tertiaryText)
-            }
+            Text(statusText)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(Theme.tertiaryText)
 
             Spacer()
 
-            if snapshot.resetSource == .inferred {
-                Text("reset approx.")
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(Theme.tertiaryText)
+            // Always available: accuracy decays as the window fills, and a second
+            // reading is what upgrades a guess into a solved number.
+            Button(action: onCalibrate) {
+                Text(snapshot.isEstimated ? "Calibrate" : "Recalibrate")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(Theme.primaryText.opacity(0.9))
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 3.5)
+                    .background(
+                        Capsule().fill(Color.white.opacity(0.11))
+                    )
+                    .overlay(
+                        Capsule().stroke(Color.white.opacity(0.13), lineWidth: 1)
+                    )
             }
+            .buttonStyle(.plain)
         }
+    }
+
+    private var statusColour: Color {
+        if snapshot.isEstimated { return Theme.warn.opacity(0.7) }
+        return snapshot.isTwoPoint ? Theme.ok : Theme.warn.opacity(0.55)
+    }
+
+    /// Distinguishes the three accuracy tiers honestly rather than calling them all
+    /// "calibrated": a guess, a single reading that may hide invisible usage, and a
+    /// two-point solve that accounts for it.
+    private var statusText: String {
+        guard let at = snapshot.calibratedAt else { return "not calibrated" }
+        let age = Format.duration(max(now.timeIntervalSince(at), 0))
+        if snapshot.isTwoPoint {
+            return snapshot.hiddenTokens > 0
+                ? "solved · \(Format.compact(snapshot.hiddenTokens)) off-device · \(age) ago"
+                : "solved · \(age) ago"
+        }
+        return "1 reading · \(age) ago"
+    }
+
+    private var subtitle: String {
+        if snapshot.resetSource == .inferred { return "this 5-hour window · reset approx." }
+        return "this 5-hour window"
     }
 
     private var resetCountdown: String {

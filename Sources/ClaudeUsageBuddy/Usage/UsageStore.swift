@@ -42,7 +42,9 @@ final class UsageStore: ObservableObject {
             resetAt: block?.end
         )
         next.resetSource = block == nil ? .unknown : .inferred
-        next.calibratedAt = Settings.hasCalibrated ? (snapshot.calibratedAt ?? now) : nil
+        next.calibratedAt = Settings.calibratedAt
+        next.isTwoPoint = Settings.isTwoPoint
+        next.hiddenTokens = Settings.hiddenTokens(forWindowStarting: block?.start)
 
         // A reset time copied from /usage beats anything inferred from transcripts,
         // which cannot see usage from claude.ai or another machine. It expires by
@@ -58,12 +60,19 @@ final class UsageStore: ObservableObject {
         lastUpdated = now
     }
 
-    /// Recomputes the allowance from a percentage the user read off `/usage`.
-    func calibrate(observedPercent: Double, resetAt: Date? = nil) {
-        Settings.calibrate(observedPercent: observedPercent, tokensUsed: snapshot.used)
+    /// Records a `/usage` reading and recomputes the allowance.
+    ///
+    /// Passes the *visible* token count, not `snapshot.used` — the latter already
+    /// includes a previously solved hidden baseline, and feeding that back in would
+    /// double-count it.
+    @discardableResult
+    func calibrate(observedPercent: Double, resetAt: Date? = nil) -> Settings.CalibrationResult {
         if let resetAt { Settings.overrideResetAt = resetAt }
-        snapshot.calibratedAt = Date()
+        let result = Settings.record(percent: observedPercent,
+                                     rawTokens: snapshot.counts.total,
+                                     windowStart: snapshot.blockStart)
         refresh()
+        return result
     }
 
     func setAllowance(_ value: Int) {

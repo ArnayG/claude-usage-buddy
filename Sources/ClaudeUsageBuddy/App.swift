@@ -139,8 +139,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
 
         menu.addItem(disabled("Tokens used: \(Format.exact(s.used))"))
-        menu.addItem(disabled("Allowance: \(Format.exact(s.allowance))\(s.isEstimated ? " (not calibrated)" : "")"))
-        menu.addItem(disabled(String(format: "Session used: %.1f%%", s.percent)))
+        menu.addItem(disabled(String(format: "Session used: %.1f%%%@", s.percent,
+                                     s.isEstimated ? " (not calibrated)" : "")))
+        if s.hiddenTokens > 0 {
+            menu.addItem(disabled("  incl. \(Format.exact(s.hiddenTokens)) used off this Mac"))
+        }
         if let reset = s.resetAt {
             let approx = s.resetSource == .inferred ? " approx." : ""
             menu.addItem(disabled("Resets \(Format.time(reset))\(approx) · in \(Format.duration(max(reset.timeIntervalSinceNow, 0)))"))

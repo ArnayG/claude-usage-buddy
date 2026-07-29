@@ -8,16 +8,17 @@ your current Claude session window you've used and when it resets.
         │        ▓▓ notch ▓▓      │
    ╭────┴─────────────────────────┴────╮
    │   ╭───╮   TOKENS USED             │
-   │   │44%│   120,113,794             │
-   │   ╰───╯   of 272M allowed         │
+   │   │44%│   132,337,126             │
+   │   ╰───╯   this 5-hour window      │
    │   ─────────────────────────────   │
    │   RESETS IN            AT         │
-   │   2h 49m               10:58 PM   │
-   │   ● calibrated                    │
+   │   1h 20m               9:40 PM    │
+   │   ● solved · 2m ago   [Recalibrate]│
    ╰───────────────────────────────────╯
 ```
 
-Four readouts, by design: **tokens used**, **allowance**, **percentage**, **reset time**.
+Three readouts, by design: **tokens used**, **percentage**, **reset time** — plus a
+Recalibrate button, because accuracy is something you top up rather than set once.
 
 When you're not hovering there's nothing to see but a hairline gauge under the notch
 that shifts green → amber → red. The notch itself is a physical cutout with no pixels
@@ -67,27 +68,39 @@ land on precise seconds (one observed here reset at 21:39:59, so it opened at
 
 ## Calibration
 
-Token counts are exact. Turning them into a percentage needs a denominator, and
-Anthropic doesn't publish one — there's no documented token cap for the rolling
-session window, and it varies by plan and tier.
+There are two independent reasons a locally-computed percentage can be wrong:
 
-So the app asks you once, on first launch. Run `/usage` in any Claude Code session and
-type in two numbers:
+1. **The denominator is unknown.** Anthropic publishes no token cap for the rolling
+   session window, and it varies by plan and tier.
+2. **The numerator is short.** Transcripts only cover Claude Code *on this Mac*. Usage
+   from claude.ai, the desktop app, or another machine is invisible here.
 
-| From `/usage` | What it fixes |
-|---|---|
-| Session percentage | Back-solves your real token allowance |
-| Reset time *(optional)* | Pins the current window exactly |
+A single reading can only fix the first, and it silently absorbs the second into the
+allowance — which is why one calibration drifts.
 
-The percentage is the important one. Repeated calibrations feed a running average, so
-they converge rather than overwrite each other. Recalibrate any time from the menu bar
-item; until you do, the panel shows an amber dot and the word *estimated*.
+**Two readings fix both.** The hidden baseline is the same in each, so it cancels:
 
-The reset time is worth entering because transcripts only cover Claude Code **on this
-Mac** — usage from claude.ai, the desktop app, or another machine is invisible here, so
-an inferred window can start later than the real one. A pinned reset time expires on
-its own once it passes, after which the countdown reverts to being inferred and the
-panel labels it *reset approx.*
+```
+allowance = Δtokens / Δpercent          ← hidden usage cancels in the subtraction
+hidden    = allowance × percent₁ − tokens₁
+```
+
+Against a simulated ground truth of a 300M allowance with 40M spent off-device:
+
+| | allowance error | reported % (truth 63.3%) |
+|---|---|---|
+| One reading | 39.4% | 82.5% |
+| Two readings | **0.0%** | **63.0%** |
+
+So: run `/usage` in Claude Code, hit **Recalibrate** on the panel and enter the
+percentage. Do it again once usage has moved a few percent. The footer tells you which
+tier you're on — *not calibrated* (amber), *1 reading* (amber), or *solved* (green),
+with the off-device total it worked out.
+
+Optionally enter the reset time too, which pins the current window exactly. Worth doing
+for the same reason: an inferred window start can be late when the real window opened
+off-device. A pinned reset expires by itself once it passes, after which the countdown
+goes back to being inferred and is labelled *reset approx.*
 
 ## Layout
 

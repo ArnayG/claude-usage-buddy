@@ -23,9 +23,17 @@ struct CalibrationPrompt: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("One-time setup")
+                Text(store.snapshot.isEstimated ? "Calibrate" : "Recalibrate")
                     .font(.title2.weight(.semibold))
-                Text("Your token count is exact, but turning it into a percentage needs to know your plan's limit — and Anthropic doesn't publish one. Copy two numbers from Claude Code and this is accurate from then on.")
+                Text(explanation)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !store.snapshot.isEstimated && !store.snapshot.isTwoPoint {
+                Label("A second reading, taken once usage has moved a few percent, lets this solve for usage it can't see — from claude.ai or another Mac — instead of guessing.",
+                      systemImage: "sparkles")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -99,12 +107,19 @@ struct CalibrationPrompt: View {
         .frame(width: 440)
     }
 
+    private var explanation: String {
+        if store.snapshot.isEstimated {
+            return "Your token count is exact, but turning it into a percentage needs your plan's limit — and Anthropic doesn't publish one. Read it off Claude Code once."
+        }
+        return "Enter what /usage reports now. Readings taken further apart give a better result."
+    }
+
     private func save() {
         guard let percent = parsedPercent else {
             error = "Enter the session percentage from /usage."
             return
         }
-        guard store.snapshot.used > 0 else {
+        guard store.snapshot.counts.total > 0 else {
             error = "No usage counted yet in this window — try again after a request or two."
             return
         }
@@ -119,8 +134,13 @@ struct CalibrationPrompt: View {
             reset = parsed
         }
 
-        store.calibrate(observedPercent: percent, resetAt: reset)
+        let result = store.calibrate(observedPercent: percent, resetAt: reset)
         Settings.promptedForCalibration = true
+
+        if case .rejected(let reason) = result {
+            error = reason
+            return
+        }
         onFinish()
     }
 }

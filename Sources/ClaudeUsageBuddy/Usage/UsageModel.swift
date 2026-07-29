@@ -47,11 +47,19 @@ struct UsageSnapshot: Equatable {
     var resetSource: ResetSource = .unknown
     /// Nil until the allowance has been measured against `/usage`.
     var calibratedAt: Date?
+    /// True when the allowance came from two readings, so hidden usage was solved
+    /// for rather than absorbed into the denominator.
+    var isTwoPoint = false
+    /// Tokens used in this window that this Mac cannot see (claude.ai, another
+    /// machine). Zero unless two-point calibration has measured it.
+    var hiddenTokens = 0
 
     static let empty = UsageSnapshot(counts: TokenCounts(), allowance: Defaults.allowance,
                                      blockStart: nil, resetAt: nil)
 
-    var used: Int { counts.total }
+    /// What the account has actually spent this window: what we can see, plus what
+    /// calibration proved was there but invisible.
+    var used: Int { counts.total + hiddenTokens }
     var remaining: Int { max(allowance - used, 0) }
 
     var fraction: Double {
