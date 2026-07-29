@@ -56,14 +56,30 @@ When you're not hovering there's nothing to see but a hairline gauge under the n
 that shifts green → amber → red. The notch itself is a physical cutout with no pixels
 behind it, so the gauge lives in the few points of real screen just below.
 
+## Requirements
+
+- **macOS 14+**, Apple silicon or Intel
+- **Claude Code installed and signed in.** The app shells out to `claude -p "/usage"`
+  for the percentage, so without it there is nothing to read. Check with:
+  ```sh
+  claude -p "/usage"
+  ```
+  It looks for the binary in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin` and
+  `~/.claude/local`.
+- **Command Line Tools** to build (`xcode-select --install`). Full Xcode is *not*
+  needed.
+- A **notch** is optional. Without one the panel drops from the top-centre of the main
+  screen instead, and the menu bar item works either way.
+
 ## Install
 
-Requires macOS 14+. Xcode is *not* needed — Command Line Tools are enough.
-
 ```sh
-make install     # builds, bundles, ad-hoc signs, copies to /Applications, launches
+git clone https://github.com/ArnayG/claude-usage-buddy.git
+cd claude-usage-buddy
+make install
 ```
 
+That builds, bundles, ad-hoc signs, copies to `/Applications`, and launches it.
 Other targets: `make run` (run from `dist/`), `make bundle`, `make clean`.
 
 The app is an accessory (`LSUIElement`) — no Dock icon. It also installs a menu bar
@@ -77,6 +93,21 @@ on Macs without a notch.
 # headless readout, for sanity checks
 /Applications/ClaudeUsageBuddy.app/Contents/MacOS/ClaudeUsageBuddy --print-usage
 ```
+
+### Why build from source instead of downloading a binary?
+
+Because a downloaded copy would be blocked. The app is ad-hoc signed, so Gatekeeper
+rejects it (`spctl` says `rejected`) and macOS quarantines anything that arrives from
+a browser or a messaging app — the recipient would have to right-click → Open, or
+strip the flag by hand:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/ClaudeUsageBuddy.app
+```
+
+Shipping a binary that opens cleanly needs a paid Apple Developer ID and
+notarization. Building locally sidesteps all of it: locally-built apps are never
+quarantined, and the build takes a few seconds.
 
 ## No credentials, ever
 
