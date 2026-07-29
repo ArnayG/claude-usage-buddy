@@ -8,6 +8,7 @@ final class NotchController {
     private let store: UsageStore
     private var window: NotchWindow?
     private var hoverView: HoverView?
+    private var peek: PeekWindow?
     private let state = PanelState()
 
     private var expandWork: DispatchWorkItem?
@@ -65,6 +66,23 @@ final class NotchController {
 
         self.window = window
         self.hoverView = hover
+
+        buildPeek(under: frame)
+    }
+
+    private func buildPeek(under collapsed: CGRect) {
+        let frame = NotchGeometry.peekFrame(for: collapsed)
+        let peek = PeekWindow(contentRect: frame)
+
+        // Static: this window is on screen whenever the panel is closed, so an
+        // animation timer here would be a permanent battery cost.
+        let view = NSHostingView(rootView: PeekRootView(store: store))
+        view.frame = CGRect(origin: .zero, size: frame.size)
+        view.autoresizingMask = [.width, .height]
+        peek.contentView = view
+        peek.orderFrontRegardless()
+
+        self.peek = peek
     }
 
     // MARK: - Hover
@@ -104,6 +122,9 @@ final class NotchController {
         store.refresh()
 
         state.isExpanded = true
+        // The panel covers this area anyway, and a second buddy underneath it would
+        // poke out below the panel's rounded corner.
+        peek?.orderOut(nil)
         let target = NotchGeometry.expandedFrame(for: collapsed, on: screen)
 
         NSAnimationContext.runAnimationGroup { ctx in
@@ -121,6 +142,11 @@ final class NotchController {
             ctx.duration = 0.20
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             window.animator().setFrame(collapsed, display: true)
+        } completionHandler: { [weak self] in
+            // Brought back only once the panel has finished shrinking past it.
+            guard let self, !self.state.isExpanded else { return }
+            self.peek?.setFrame(NotchGeometry.peekFrame(for: collapsed), display: false)
+            self.peek?.orderFrontRegardless()
         }
     }
 
@@ -134,12 +160,17 @@ final class NotchController {
         // Fullscreen hides the menu bar and covers the notch; get out of the way.
         if NotchGeometry.menuBarHidden(on: screen) {
             if window.isVisible { window.orderOut(nil) }
+            if peek?.isVisible == true { peek?.orderOut(nil) }
             return
         }
         if !window.isVisible {
             window.setFrame(collapsed, display: false)
             state.isExpanded = false
             window.orderFrontRegardless()
+        }
+        if peek?.isVisible == false && !state.isExpanded {
+            peek?.setFrame(NotchGeometry.peekFrame(for: collapsed), display: false)
+            peek?.orderFrontRegardless()
         }
     }
 
@@ -149,6 +180,7 @@ final class NotchController {
         collapseWork?.cancel(); collapseWork = nil
         state.isExpanded = false
         window.setFrame(collapsed, display: true)
+        peek?.setFrame(NotchGeometry.peekFrame(for: collapsed), display: true)
     }
 }
 
@@ -158,6 +190,16 @@ final class PanelState: ObservableObject {
     @Published var isExpanded = false
     /// Drives the live countdown without the views owning a timer each.
     @Published var now = Date()
+}
+
+/// Contents of the always-visible peek window. Static by design — see `PeekWindow`.
+private struct PeekRootView: View {
+    @ObservedObject var store: UsageStore
+
+    var body: some View {
+        BuddyView(fraction: store.snapshot.fraction, animated: false, trimTop: true)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 }
 
 private struct NotchRootView: View {

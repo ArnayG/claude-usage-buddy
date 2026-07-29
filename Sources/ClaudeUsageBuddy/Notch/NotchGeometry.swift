@@ -7,7 +7,26 @@ import AppKit
 /// and non-notched Macs all behave correctly.
 enum NotchGeometry {
     /// Size of the panel once expanded.
-    static let expandedSize = CGSize(width: 420, height: 214)
+    ///
+    /// 440 rather than 420 so the buddy fits beside the ring and the token count:
+    /// 84 + 18 + ~165 + 18 + 88 = 373 inside 396pt of content width.
+    static let expandedSize = CGSize(width: 440, height: 214)
+
+    /// The always-visible creature below the notch. 24×17 renders the sprite at
+    /// exactly 1.5pt per cell with the empty head-room rows trimmed off.
+    static let peekSize = CGSize(width: 24, height: 17)
+
+    /// Hangs the peek directly below the collapsed window, centred on the notch.
+    ///
+    /// Below rather than overlapping: the collapsed window's bottom few points carry
+    /// the hairline gauge, and a creature sitting on top of it would break the line
+    /// in the middle. Stacked, it reads as the buddy hanging off the gauge.
+    static func peekFrame(for collapsed: CGRect) -> CGRect {
+        CGRect(x: (collapsed.midX - peekSize.width / 2).rounded(),
+               y: collapsed.minY - peekSize.height,
+               width: peekSize.width,
+               height: peekSize.height)
+    }
 
     /// Used when a Mac has no notch but we still want the panel to drop from the
     /// top edge (external display fallback, or a notch-less MacBook).

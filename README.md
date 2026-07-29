@@ -6,19 +6,44 @@ your current Claude session window you've used and when it resets.
 ```
         ╭─────────────────────────╮
         │        ▓▓ notch ▓▓      │
-   ╭────┴─────────────────────────┴────╮
-   │   ╭───╮   TOKENS USED             │
-   │   │44%│   132,337,126             │
-   │   ╰───╯   this 5-hour window      │
-   │   ─────────────────────────────   │
-   │   RESETS IN            AT         │
-   │   1h 20m               9:40 PM    │
-   │   ● solved · 2m ago   [Recalibrate]│
-   ╰───────────────────────────────────╯
+   ╭────┴─────────────────────────┴─────╮
+   │  ╭───╮  TOKENS USED    ┌──────┐    │
+   │  │44%│  132,337,126   ─┤ ▪  ▪ ├─   │
+   │  ╰───╯  this window    └┬┬──┬┬┘    │
+   │  ────────────────────────────────  │
+   │  RESETS IN            AT           │
+   │  1h 20m               9:40 PM      │
+   │  ● solved       [Recalibrate]      │
+   ╰────────────────────────────────────╯
 ```
 
 Three readouts, by design: **tokens used**, **percentage**, **reset time** — plus a
 Recalibrate button, because accuracy is something you top up rather than set once.
+
+And a buddy, who is having a progressively worse time as you spend your window.
+
+## The buddy
+
+A pixel creature that wilts as usage climbs. With no mouth to work with, the emotional
+range is carried by eye shape, arm droop, leg posture and colour:
+
+| Usage | Eyes | Posture |
+|---|---|---|
+| 0–20% | `^ ^` happy | arms up, gentle bob |
+| 20–40% | `▮ ▮` neutral | the reference sprite |
+| 40–65% | `▬ ▬` wary squint | flat |
+| 65–85% | `v v` downcast | arms sagging |
+| 85–100% | `✕ ✕` dead | limp arms, legs splayed, ashen |
+
+It stays clay (`#D97757`) and gets *sick* rather than shifting hue — the ring beside it
+already carries green→amber→red, and recolouring the character would throw away its
+identity.
+
+A small version also hangs below the notch whenever the panel is closed, so you get the
+mood without hovering. That peek is a **separate, `ignoresMouseEvents` window**: growing
+the collapsed window instead would have left a 185×20pt strip permanently swallowing
+clicks right under the menu bar. It renders statically — an animation timer on a window
+that is visible 24/7 is a permanent battery cost.
 
 When you're not hovering there's nothing to see but a hairline gauge under the notch
 that shifts green → amber → red. The notch itself is a physical cutout with no pixels

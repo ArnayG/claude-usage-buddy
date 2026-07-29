@@ -34,7 +34,12 @@ struct ExpandedView: View {
                         .foregroundStyle(Theme.secondaryText)
                         .monospacedDigit()
                 }
-                Spacer(minLength: 0)
+                Spacer(minLength: 8)
+
+                // 88×77 keeps the sprite's 16:14 ratio at exactly 5.5pt per cell,
+                // which lands on whole device pixels at 2×.
+                BuddyView(fraction: snapshot.fraction)
+                    .frame(width: 88, height: 77)
             }
 
             Rectangle()
