@@ -146,6 +146,13 @@ Transcripts still supply the token count, which `/usage` does not report. The wi
 defined by the probe's reset time (`start = reset − 5h`), so only tokens inside the real
 window are counted.
 
+The headline counts **new tokens only** — input, output, and cache writes. Cache *reads*
+are excluded on purpose: they are the existing conversation being re-fed on every
+request, so the same tokens get counted again and again. Measured over one real window
+they were 98.8% of the raw total (245M of 248M), inflating it about 86× while being the
+cheapest token type by an order of magnitude. The raw figure is still available via
+`--print-usage` and in the menu bar item.
+
 There is nothing to calibrate, and no settings that affect accuracy.
 
 ## Layout

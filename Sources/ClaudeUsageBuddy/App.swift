@@ -65,16 +65,17 @@ enum Main {
 
         print("""
           entries parsed : \(entries.count)
-          tokens used    : \(Format.exact(counts.total))
+          new tokens     : \(Format.exact(counts.fresh))   <- headline
             input        : \(Format.exact(counts.input))
             output       : \(Format.exact(counts.output))
             cache write  : \(Format.exact(counts.cacheCreation))
-            cache read   : \(Format.exact(counts.cacheRead))
+          cached re-read : \(Format.exact(counts.cacheRead))   (excluded)
+          raw total      : \(Format.exact(counts.total))
           session used   : \(percent.map { String(format: "%.1f%%", $0) } ?? "unknown")
           window start   : \(start.map(Format.time) ?? "—")\(windowStart == nil ? " (inferred locally)" : "")
           resets at      : \(resetAt.map(Format.time) ?? "—")
           resets in      : \(resetAt.map { Format.duration(max($0.timeIntervalSince(now), 0)) } ?? "—")
-          last 7 days    : \(Format.exact(weekly.total))
+          last 7 days    : \(Format.exact(weekly.fresh)) new  (\(Format.exact(weekly.total)) raw)
         """)
         exit(0)
     }
@@ -127,7 +128,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let s = store.snapshot
         let menu = NSMenu()
 
-        menu.addItem(disabled("Tokens used: \(Format.exact(s.used))"))
+        menu.addItem(disabled("New tokens: \(Format.exact(s.used))"))
+        menu.addItem(disabled("  + \(Format.exact(s.contextReplay)) cached context re-read"))
         if s.isUnverified {
             menu.addItem(disabled("Session used: reading /usage…"))
         } else {

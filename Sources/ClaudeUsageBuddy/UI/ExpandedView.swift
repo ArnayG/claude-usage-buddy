@@ -21,7 +21,7 @@ struct ExpandedView: View {
                     .frame(width: 84, height: 84)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Label2("TOKENS USED")
+                    Label2("NEW TOKENS")
 
                     Text(Format.exact(snapshot.used))
                         .font(.system(size: 25, weight: .semibold, design: .rounded))
