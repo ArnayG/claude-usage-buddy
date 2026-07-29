@@ -7,8 +7,8 @@ your current Claude session window you've used and when it resets.
         ╭─────────────────────────╮
         │        ▓▓ notch ▓▓      │
    ╭────┴─────────────────────────┴─────╮
-   │  ╭───╮  TOKENS USED    ┌──────┐    │
-   │  │44%│  132,337,126   ─┤ ▪  ▪ ├─   │
+   │  ╭───╮  NEW TOKENS     ┌──────┐    │
+   │  │44%│    2,847,309   ─┤ ▪  ▪ ├─   │
    │  ╰───╯  this window    └┬┬──┬┬┘    │
    │  ────────────────────────────────  │
    │  RESETS IN            AT           │
@@ -126,8 +126,8 @@ project, because the rate limit is account-wide.
 
 A session window opens on the first request after a five-hour lull and runs five hours
 from that exact moment — *not* from the top of the hour. Anthropic's own reset times
-land on precise seconds (one observed here reset at 21:39:59, so it opened at
-16:39:59), so rounding down to the hour would shift the countdown by up to an hour.
+land on precise seconds rather than on the hour, so rounding a window start down to
+the hour can shift the countdown by up to an hour in the wrong direction.
 
 ## Where the numbers come from
 
@@ -146,7 +146,7 @@ Claude Code already knows the answer, and will tell you:
 
 ```
 $ claude -p "/usage"
-Current session: 5% used · resets Jul 29 at 2:40am (America/Indianapolis)
+Current session: 37% used · resets Jul 29 at 2:40am (America/New_York)
 ```
 
 Measured on Claude Code 2.1.220, that takes ~1.1s and **costs nothing** — the request
