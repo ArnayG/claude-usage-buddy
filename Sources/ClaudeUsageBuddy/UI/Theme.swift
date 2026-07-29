@@ -32,7 +32,10 @@ enum Theme {
 
     static let cornerRadius: CGFloat = 22
     /// Size of the flare where the panel's sides meet the top edge of the display.
-    static let topFlare: CGFloat = 9
+    ///
+    /// Kept at or below the 32pt menu bar height so the curve resolves inside the
+    /// menu bar strip rather than running on down into the panel body.
+    static let topFlare: CGFloat = 20
 }
 
 /// The expanded panel's silhouette.
