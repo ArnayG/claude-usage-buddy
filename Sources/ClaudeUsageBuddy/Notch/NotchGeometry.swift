@@ -12,20 +12,28 @@ enum NotchGeometry {
     /// 84 + 18 + ~165 + 18 + 88 = 373 inside 396pt of content width.
     static let expandedSize = CGSize(width: 440, height: 214)
 
-    /// The always-visible creature below the notch. 24×17 renders the sprite at
-    /// exactly 1.5pt per cell with the empty head-room rows trimmed off.
-    static let peekSize = CGSize(width: 24, height: 17)
+    /// The always-visible creature, sitting in the menu bar strip to the right of
+    /// the camera. 32×22 renders the trimmed sprite at exactly 2pt per cell.
+    static let peekSize = CGSize(width: 32, height: 22)
 
-    /// Hangs the peek directly below the collapsed window, centred on the notch.
+    /// Gap between the cutout's right edge and the buddy.
+    static let peekGap: CGFloat = 6
+
+    /// Sits the buddy in the menu bar, just right of the camera cutout.
     ///
-    /// Below rather than overlapping: the collapsed window's bottom few points carry
-    /// the hairline gauge, and a creature sitting on top of it would break the line
-    /// in the middle. Stacked, it reads as the buddy hanging off the gauge.
+    /// It used to hang below the notch, which put it in the content area where it got
+    /// in the way of real work. The menu bar strip beside the cutout is dead space on
+    /// most setups — status items pack in from the right edge, so the points next to
+    /// the notch are the last to be claimed.
     static func peekFrame(for collapsed: CGRect) -> CGRect {
-        CGRect(x: (collapsed.midX - peekSize.width / 2).rounded(),
-               y: collapsed.minY - peekSize.height,
-               width: peekSize.width,
-               height: peekSize.height)
+        // `collapsed` extends below the cutout for the hairline gauge; the cutout
+        // itself is the part sitting in the menu bar.
+        let cutoutHeight = collapsed.height - gaugeOverhang
+        let menuBarMidY = collapsed.maxY - cutoutHeight / 2
+        return CGRect(x: (collapsed.maxX + peekGap).rounded(),
+                      y: (menuBarMidY - peekSize.height / 2).rounded(),
+                      width: peekSize.width,
+                      height: peekSize.height)
     }
 
     /// Used when a Mac has no notch but we still want the panel to drop from the

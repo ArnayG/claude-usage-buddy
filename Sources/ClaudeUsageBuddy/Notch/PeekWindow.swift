@@ -1,16 +1,15 @@
 import AppKit
 import SwiftUI
 
-/// The little creature that stays visible below the notch when the panel is collapsed.
+/// The little creature that sits in the menu bar beside the camera when the panel
+/// is collapsed.
 ///
-/// Deliberately a **separate window** from `NotchWindow`. The obvious alternative —
-/// growing the collapsed window's overhang so the buddy has room — would leave a
-/// 185 × 20pt strip permanently swallowing clicks directly under the menu bar, right
-/// where a maximised window's toolbar sits.
+/// Deliberately a **separate window** from `NotchWindow`, so it can be positioned
+/// independently of the hover target and sized to nothing more than the sprite.
 ///
-/// The buddy is pokeable, so this window does take mouse events — but at 24 × 17pt
-/// that is a thumbnail-sized target rather than a bar across the whole notch, which
-/// is the entire reason for keeping it in its own window.
+/// It lives in the menu bar rather than below the notch: hanging into the content
+/// area put it on top of real work. The buddy is pokeable, so this window does take
+/// mouse events — at 32 × 22pt in a strip that is dead space on most setups.
 final class PeekWindow: NSPanel {
     init(contentRect: CGRect) {
         super.init(

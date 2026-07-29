@@ -45,11 +45,12 @@ two decaying hops. Even at 95% it manages a weak rally, which reads as the creat
 responding to you rather than the gauge having broken. The animation ticker only runs
 while you are interacting — idle CPU measured 0.6%, hovering 3.5%.
 
-A small version also hangs below the notch whenever the panel is closed, so you get the
-mood without hovering. That peek is a **separate, `ignoresMouseEvents` window**: growing
-the collapsed window instead would have left a 185×20pt strip permanently swallowing
-clicks right under the menu bar. It renders statically — an animation timer on a window
-that is visible 24/7 is a permanent battery cost.
+A small version also sits **in the menu bar, just right of the camera**, whenever the
+panel is closed — so you get the mood without hovering. It started out hanging below the
+notch, which put it in the content area on top of real work; the strip beside the cutout
+is dead space on most setups, since status items pack in from the right edge. It renders
+statically, because an animation timer on a window visible 24/7 is a permanent battery
+cost — the ticker starts only while you are hovering or poking it.
 
 When you're not hovering there's nothing to see but a hairline gauge under the notch
 that shifts green → amber → red. The notch itself is a physical cutout with no pixels
