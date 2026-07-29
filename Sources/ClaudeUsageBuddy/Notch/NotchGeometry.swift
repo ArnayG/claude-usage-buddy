@@ -8,9 +8,10 @@ import AppKit
 enum NotchGeometry {
     /// Size of the panel once expanded.
     ///
-    /// 440 rather than 420 so the buddy fits beside the ring and the token count:
-    /// 84 + 18 + ~165 + 18 + 88 = 373 inside 396pt of content width.
-    static let expandedSize = CGSize(width: 440, height: 214)
+    /// 440pt of visible body, plus `Theme.topFlare` either side for the concave
+    /// flare into the top edge of the display — the body only reaches this full
+    /// width at the very top.
+    static let expandedSize = CGSize(width: 440 + 2 * Theme.topFlare, height: 214)
 
     /// The always-visible creature, sitting in the menu bar strip to the right of
     /// the camera. 32×22 renders the trimmed sprite at exactly 2pt per cell.

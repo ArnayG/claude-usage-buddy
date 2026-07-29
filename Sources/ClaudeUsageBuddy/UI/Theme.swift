@@ -31,39 +31,46 @@ enum Theme {
     }
 
     static let cornerRadius: CGFloat = 22
-    /// Where the panel's sides meet the top edge of the display, mirroring the
-    /// cutout's own fillet.
-    static let topCornerRadius: CGFloat = 7
+    /// Size of the flare where the panel's sides meet the top edge of the display.
+    static let topFlare: CGFloat = 9
 }
 
 /// The expanded panel's silhouette.
 ///
-/// The bottom corners carry the big "dynamic island" curve. The top corners are
-/// rounded too, just far less: on a MacBook the cutout curves gently where its
-/// vertical edges meet the top edge of the display, so a hard 90° corner there reads
-/// as obviously synthetic sitting next to the real thing.
+/// The bottom corners carry the big convex "dynamic island" curve. The top corners
+/// are the opposite: the MacBook's cutout does not round *off* where its vertical
+/// edges reach the top edge of the display, it flares *out* into it — black is added
+/// in that corner, not taken away, so the boundary is concave. Rounding the corner
+/// off instead (which is what this shape did at first) narrows the panel exactly
+/// where the hardware widens it, and reads as backwards next to the real thing.
+///
+/// The body therefore sits inset by `topFlare` on each side and only reaches the
+/// full width at the very top edge.
 struct NotchPanelShape: Shape {
-    var topRadius: CGFloat = Theme.topCornerRadius
+    var flare: CGFloat = Theme.topFlare
     var bottomRadius: CGFloat = Theme.cornerRadius
 
     func path(in rect: CGRect) -> Path {
-        let halfMin = min(rect.width, rect.height) / 2
-        let tr = min(topRadius, halfMin)
-        let br = min(bottomRadius, halfMin)
+        let f = min(flare, rect.width / 2)
+        let br = min(bottomRadius, min(rect.width / 2 - f, rect.height / 2))
 
         var p = Path()
-        p.move(to: CGPoint(x: rect.minX, y: rect.minY + tr))
-        p.addQuadCurve(to: CGPoint(x: rect.minX + tr, y: rect.minY),
-                       control: CGPoint(x: rect.minX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX - tr, y: rect.minY))
-        p.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + tr),
-                       control: CGPoint(x: rect.maxX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - br))
-        p.addQuadCurve(to: CGPoint(x: rect.maxX - br, y: rect.maxY),
-                       control: CGPoint(x: rect.maxX, y: rect.maxY))
-        p.addLine(to: CGPoint(x: rect.minX + br, y: rect.maxY))
-        p.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - br),
-                       control: CGPoint(x: rect.minX, y: rect.maxY))
+        // Full width along the very top edge of the display.
+        p.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        // Concave flare inward: control at the *inner* corner puts the centre of
+        // curvature outside the fill, which is what makes it cove rather than round.
+        p.addQuadCurve(to: CGPoint(x: rect.maxX - f, y: rect.minY + f),
+                       control: CGPoint(x: rect.maxX - f, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX - f, y: rect.maxY - br))
+        p.addQuadCurve(to: CGPoint(x: rect.maxX - f - br, y: rect.maxY),
+                       control: CGPoint(x: rect.maxX - f, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX + f + br, y: rect.maxY))
+        p.addQuadCurve(to: CGPoint(x: rect.minX + f, y: rect.maxY - br),
+                       control: CGPoint(x: rect.minX + f, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX + f, y: rect.minY + f))
+        p.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.minY),
+                       control: CGPoint(x: rect.minX + f, y: rect.minY))
         p.closeSubpath()
         return p
     }

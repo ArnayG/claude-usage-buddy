@@ -70,7 +70,9 @@ struct ExpandedView: View {
             Spacer(minLength: 6)
             footer
         }
-        .padding(.horizontal, 22)
+        // +flare so content keeps its 22pt margin from the *body* edge, which is
+        // inset from the frame by the flare.
+        .padding(.horizontal, 22 + Theme.topFlare)
         .padding(.bottom, 14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // No outline: a light stroke traced the whole silhouette, including the
