@@ -73,14 +73,9 @@ struct ExpandedView: View {
         .padding(.horizontal, 22)
         .padding(.bottom, 14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(
-            BottomRoundedRect(radius: Theme.cornerRadius)
-                .fill(Theme.panel)
-                .overlay(
-                    BottomRoundedRect(radius: Theme.cornerRadius)
-                        .stroke(Color.white.opacity(0.07), lineWidth: 1)
-                )
-        )
+        // No outline: a light stroke traced the whole silhouette, including the
+        // edges meeting the notch, and read as a halo separating panel from cutout.
+        .background(NotchPanelShape().fill(Theme.panel))
     }
 
     private var footer: some View {

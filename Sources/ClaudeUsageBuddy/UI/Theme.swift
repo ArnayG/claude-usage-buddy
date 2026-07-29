@@ -1,10 +1,17 @@
 import SwiftUI
 
 enum Theme {
-    /// Matches the physical notch so the expanded panel reads as one object with it.
+    /// Pure black, matching the cutout as closely as pixels allow.
+    ///
+    /// Verified #000000 when rendered — there is nothing darker available, so any
+    /// remaining difference against the physical notch is the display's black point
+    /// versus an unlit bezel, not something a colour value can fix. What *can* be
+    /// fixed is light bleeding in from nearby: hence no outline stroke, and text a
+    /// little below full white so mini-LED local dimming does not lift the black
+    /// around it.
     static let panel = Color.black
 
-    static let primaryText = Color.white
+    static let primaryText = Color.white.opacity(0.93)
     static let secondaryText = Color.white.opacity(0.55)
     static let tertiaryText = Color.white.opacity(0.34)
     static let hairline = Color.white.opacity(0.10)
@@ -24,22 +31,38 @@ enum Theme {
     }
 
     static let cornerRadius: CGFloat = 22
+    /// Where the panel's sides meet the top edge of the display, mirroring the
+    /// cutout's own fillet.
+    static let topCornerRadius: CGFloat = 7
 }
 
-/// Rounds only the bottom corners, so the panel looks like the notch extending down.
-struct BottomRoundedRect: Shape {
-    var radius: CGFloat
+/// The expanded panel's silhouette.
+///
+/// The bottom corners carry the big "dynamic island" curve. The top corners are
+/// rounded too, just far less: on a MacBook the cutout curves gently where its
+/// vertical edges meet the top edge of the display, so a hard 90° corner there reads
+/// as obviously synthetic sitting next to the real thing.
+struct NotchPanelShape: Shape {
+    var topRadius: CGFloat = Theme.topCornerRadius
+    var bottomRadius: CGFloat = Theme.cornerRadius
 
     func path(in rect: CGRect) -> Path {
-        let r = min(radius, min(rect.width, rect.height) / 2)
+        let halfMin = min(rect.width, rect.height) / 2
+        let tr = min(topRadius, halfMin)
+        let br = min(bottomRadius, halfMin)
+
         var p = Path()
-        p.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
-        p.addQuadCurve(to: CGPoint(x: rect.maxX - r, y: rect.maxY),
+        p.move(to: CGPoint(x: rect.minX, y: rect.minY + tr))
+        p.addQuadCurve(to: CGPoint(x: rect.minX + tr, y: rect.minY),
+                       control: CGPoint(x: rect.minX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX - tr, y: rect.minY))
+        p.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + tr),
+                       control: CGPoint(x: rect.maxX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - br))
+        p.addQuadCurve(to: CGPoint(x: rect.maxX - br, y: rect.maxY),
                        control: CGPoint(x: rect.maxX, y: rect.maxY))
-        p.addLine(to: CGPoint(x: rect.minX + r, y: rect.maxY))
-        p.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - r),
+        p.addLine(to: CGPoint(x: rect.minX + br, y: rect.maxY))
+        p.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - br),
                        control: CGPoint(x: rect.minX, y: rect.maxY))
         p.closeSubpath()
         return p
