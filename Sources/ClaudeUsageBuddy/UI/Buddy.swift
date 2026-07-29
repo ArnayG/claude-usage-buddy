@@ -141,13 +141,29 @@ enum BuddyPalette {
     static let ill     = Color(red: 0.651, green: 0.380, blue: 0.322)  // #A66152
     static let ashen   = Color(red: 0.549, green: 0.357, blue: 0.341)  // #8C5B57
 
+    private static let stops: [(at: Double, r: Double, g: Double, b: Double)] = [
+        (0.00, 0.851, 0.467, 0.341),
+        (0.55, 0.773, 0.416, 0.298),
+        (0.80, 0.651, 0.380, 0.322),
+        (1.00, 0.549, 0.357, 0.341),
+    ]
+
+    /// Interpolated, not stepped.
+    ///
+    /// The five moods are wide — 40–65% is a 25-point band — so with a stepped ramp
+    /// the creature can look completely frozen for hours of real use. A continuous
+    /// colour means there is always some visible drift, even mid-band.
     static func colour(for fraction: Double) -> Color {
-        switch fraction {
-        case ..<0.40: return healthy
-        case ..<0.70: return dull
-        case ..<0.90: return ill
-        default:      return ashen
+        let f = min(max(fraction, 0), 1)
+        for i in 1..<stops.count where f <= stops[i].at {
+            let lo = stops[i - 1], hi = stops[i]
+            let t = hi.at == lo.at ? 0 : (f - lo.at) / (hi.at - lo.at)
+            return Color(red:   lo.r + (hi.r - lo.r) * t,
+                         green: lo.g + (hi.g - lo.g) * t,
+                         blue:  lo.b + (hi.b - lo.b) * t)
         }
+        let last = stops[stops.count - 1]
+        return Color(red: last.r, green: last.g, blue: last.b)
     }
 }
 
@@ -158,33 +174,71 @@ struct BuddyView: View {
     var animated: Bool = true
     /// Drops the empty rows above the head, for tight spaces like the peek.
     var trimTop: Bool = false
+    /// Reacts to hover and clicks.
+    var interactive: Bool = true
 
+    @State private var hovering = false
+    @State private var pokedAt: Date?
     @Environment(\.displayScale) private var displayScale
 
     private var mood: BuddyMood { BuddyMood(fraction: fraction) }
 
+    private var reacting: Bool { interactive && (hovering || pokedAt != nil) }
+
+    /// A poke perks it up. Even at death's door it manages a weak rally, which reads
+    /// as the creature responding to you rather than the gauge having gone wrong.
+    private var displayMood: BuddyMood {
+        guard reacting else { return mood }
+        return mood == .dying ? .sad : .chipper
+    }
+
+    /// The idle ticker is opt-in, but a reaction always needs one — otherwise the hop
+    /// would never draw on the otherwise-static notch peek.
+    private var needsTicker: Bool { animated || reacting }
+
     var body: some View {
         Group {
-            if animated {
-                // 12Hz is plenty for a bob and a blink, and far cheaper than the
+            if needsTicker {
+                // 24Hz: smooth enough for the hop, still far cheaper than the
                 // display-linked .animation schedule.
-                TimelineView(.periodic(from: .now, by: 1.0 / 12.0)) { ctx in
+                TimelineView(.periodic(from: .now, by: 1.0 / 24.0)) { ctx in
                     canvas(at: ctx.date.timeIntervalSinceReferenceDate)
                 }
             } else {
                 canvas(at: 0)
             }
         }
+        .contentShape(Rectangle())
+        .onHover { inside in
+            guard interactive else { return }
+            hovering = inside
+        }
+        .onTapGesture { poke() }
         .animation(.spring(duration: 0.28), value: mood)
     }
 
+    private func poke() {
+        guard interactive else { return }
+        pokedAt = Date()
+        DispatchQueue.main.asyncAfter(deadline: .now() + hopDuration + 0.1) {
+            // Ignore a stale timer from an earlier poke that has been superseded.
+            if let started = pokedAt, Date().timeIntervalSince(started) >= hopDuration {
+                pokedAt = nil
+            }
+        }
+    }
+
+    private var hopDuration: TimeInterval { 0.62 }
+
     private func canvas(at time: TimeInterval) -> some View {
-        let blinking = animated && isBlinking(at: time)
-        var rows = blinking ? mood.blinkGrid : mood.grid
+        let active = displayMood
+        // A reacting buddy has its eyes open — blinking through a hop looks broken.
+        let blinking = animated && !reacting && isBlinking(at: time)
+        var rows = blinking ? active.blinkGrid : active.grid
         if trimTop {
             rows = Array(rows.drop { !$0.contains("X") })
         }
-        let bob = animated ? bobOffset(at: time) : 0
+        let bob = (animated ? bobOffset(at: time) : 0) + reactionOffset(at: time)
         let colour = BuddyPalette.colour(for: fraction)
 
         return Canvas { ctx, size in
@@ -213,6 +267,22 @@ struct BuddyView: View {
         }
     }
 
+    /// Hover lifts it slightly; a click sends it into two decaying hops.
+    private func reactionOffset(at time: TimeInterval) -> CGFloat {
+        guard interactive else { return 0 }
+
+        if let started = pokedAt {
+            let t = time - started.timeIntervalSinceReferenceDate
+            if t >= 0 && t < hopDuration {
+                let progress = t / hopDuration
+                let arc = abs(sin(.pi * progress * 2))      // two hops
+                let decay = 1 - progress                     // second one smaller
+                return -CGFloat(arc * decay) * 8
+            }
+        }
+        return hovering ? -2.5 : 0
+    }
+
     /// Roughly every five seconds, for two frames.
     private func isBlinking(at time: TimeInterval) -> Bool {
         guard mood != .dying else { return false }
@@ -220,7 +290,7 @@ struct BuddyView: View {
     }
 
     private func bobOffset(at time: TimeInterval) -> CGFloat {
-        switch mood {
+        switch displayMood {
         case .chipper, .content:
             return sin(time * 1.9) * 1.0
         case .worried:

@@ -37,7 +37,14 @@ range is carried by eye shape, arm droop, leg posture and colour:
 
 It stays clay (`#D97757`) and gets *sick* rather than shifting hue — the ring beside it
 already carries green→amber→red, and recolouring the character would throw away its
-identity.
+identity. The colour ramp is **interpolated, not stepped**: the mood bands are wide
+(40–65% is 25 points), so without continuous colour the creature can look frozen
+through hours of real use.
+
+**Poke it.** Hovering lifts it slightly and perks its eyes up; clicking sends it into
+two decaying hops. Even at 95% it manages a weak rally, which reads as the creature
+responding to you rather than the gauge having broken. The animation ticker only runs
+while you are interacting — idle CPU measured 0.6%, hovering 3.5%.
 
 A small version also hangs below the notch whenever the panel is closed, so you get the
 mood without hovering. That peek is a **separate, `ignoresMouseEvents` window**: growing
