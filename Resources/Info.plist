@@ -6,6 +6,8 @@
 	<string>ClaudeUsageBuddy</string>
 	<key>CFBundleDisplayName</key>
 	<string>Claude Usage Buddy</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.arnay.claude-usage-buddy</string>
 	<key>CFBundleExecutable</key>
