@@ -30,6 +30,45 @@ enum Theme {
         }
     }
 
+    // MARK: - Per-model split
+
+    /// Category colours for the model split, hand-picked for the three families that
+    /// exist today.
+    ///
+    /// Cool hues only — these sit at 197°, 248° and 314°. Warm colour on this panel is
+    /// already spoken for twice: the ring runs green→amber→red for how spent the window
+    /// is, and the buddy is clay. A warm slice here would read as a third severity
+    /// signal rather than as a category, which is exactly the wrong message — which
+    /// model you used is not good or bad news. All three measure above 7:1 against the
+    /// black panel, and they stay apart from each other by at least 50° of hue so the
+    /// bar survives being 9pt tall.
+    static let modelColours: [String: Color] = [
+        "opus":   Color(red: 0.61, green: 0.55, blue: 1.00),   // #9B8CFF periwinkle
+        "sonnet": Color(red: 0.31, green: 0.76, blue: 0.94),   // #4FC1F0 sky
+        "haiku":  Color(red: 0.94, green: 0.55, blue: 0.85),   // #F08CD8 orchid
+    ]
+
+    /// Reserved for the grouped tail, so "Other" is visibly not a named model.
+    static let modelOther = Color(red: 0.55, green: 0.58, blue: 0.65)   // #8C93A6
+
+    /// Colour for a model family, including ones that do not exist yet.
+    ///
+    /// An unrecognised family gets a hue rotated deterministically inside the same cool
+    /// band, so a model shipped after this build still draws a legible slice — and the
+    /// same colour on every launch — instead of vanishing or borrowing its neighbour's.
+    /// Two unknown families can in principle land on similar hues; the legend names
+    /// every slice, so colour is the hint and the label is the answer.
+    static func modelColour(for key: String) -> Color {
+        if let named = modelColours[key] { return named }
+        if key == ModelUsage.otherKey { return modelOther }
+
+        var hash: UInt64 = 5381
+        for byte in key.utf8 { hash = hash &* 33 &+ UInt64(byte) }
+        // 196°–320°: the cool band, clear of the ring's greens and the buddy's clay.
+        return Color(hue: (196 + Double(hash % 125)) / 360,
+                     saturation: 0.62, brightness: 0.94)
+    }
+
     static let cornerRadius: CGFloat = 22
     /// Size of the flare where the panel's sides meet the top edge of the display.
     ///

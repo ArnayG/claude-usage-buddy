@@ -46,6 +46,14 @@ struct ExpandedView: View {
                     .frame(width: 88, height: 77)
             }
 
+            // Directly under the token count, because it is a breakdown of exactly that
+            // number — not of the ring's percentage, which has no per-model answer.
+            VStack(alignment: .leading, spacing: 6) {
+                Label2("SHARE OF NEW TOKENS")
+                ModelSplitBar(models: snapshot.byModel)
+            }
+            .padding(.top, 13)
+
             Rectangle()
                 .fill(Theme.hairline)
                 .frame(height: 1)

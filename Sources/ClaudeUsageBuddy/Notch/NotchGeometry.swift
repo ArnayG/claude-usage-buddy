@@ -11,7 +11,14 @@ enum NotchGeometry {
     /// 440pt of visible body, plus `Theme.topFlare` either side for the concave
     /// flare into the top edge of the display — the body only reaches this full
     /// width at the very top.
-    static let expandedSize = CGSize(width: 440 + 2 * Theme.topFlare, height: 214)
+    ///
+    /// The height grew from 214 to fit the per-model split. The top row was already
+    /// full — an 84pt ring, the token count, and an 88pt buddy — and squeezing a bar
+    /// and its legend in beside them would have cost the token count its size, which is
+    /// the one number people open the panel for. Height is the cheap dimension here:
+    /// the panel hangs from the top edge, so growing it downward costs nothing but a
+    /// little more of the screen while hovering.
+    static let expandedSize = CGSize(width: 440 + 2 * Theme.topFlare, height: 265)
 
     /// The always-visible creature, sitting in the menu bar strip to the right of
     /// the camera. 32×22 renders the trimmed sprite at exactly 2pt per cell.
