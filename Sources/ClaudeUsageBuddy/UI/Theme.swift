@@ -79,40 +79,71 @@ enum Theme {
 
 /// The expanded panel's silhouette.
 ///
-/// The bottom corners carry the big convex "dynamic island" curve. The top corners
-/// are the opposite: the MacBook's cutout does not round *off* where its vertical
-/// edges reach the top edge of the display, it flares *out* into it — black is added
-/// in that corner, not taken away, so the boundary is concave. Rounding the corner
-/// off instead (which is what this shape did at first) narrows the panel exactly
-/// where the hardware widens it, and reads as backwards next to the real thing.
+/// The bottom corners carry the big convex "dynamic island" curve. The top corners are
+/// the opposite: the MacBook's cutout does not round *off* where its vertical edges
+/// reach the top edge of the display, it flares *out* into it — black is added in that
+/// corner, not taken away, so the boundary is concave. Rounding the corner off instead
+/// narrows the panel exactly where the hardware widens it and reads as backwards next
+/// to the real thing.
 ///
-/// The body therefore sits inset by `topFlare` on each side and only reaches the
-/// full width at the very top edge.
+/// Every corner is a **true quarter circle**, drawn as a cubic. An earlier version used
+/// `addQuadCurve`, which cannot represent a circular arc at all: a quadratic through
+/// those endpoints passes through (0.75r, 0.25r) where the arc passes through
+/// (0.707r, 0.293r), deviating up to 6.1% of the radius — 1.2pt at a 20pt flare — and
+/// biased toward the top edge, so the flare looked clipped rather than swept. The cubic
+/// below tracks the arc to within 0.03%.
+///
+/// The body sits inset by `flare` on each side and only reaches full width at the very
+/// top edge.
 struct NotchPanelShape: Shape {
     var flare: CGFloat = Theme.topFlare
     var bottomRadius: CGFloat = Theme.cornerRadius
 
+    /// Control-point offset that turns a cubic into a quarter circle: 4(√2−1)/3.
+    /// Standard result — the value that makes the curve's midpoint fall exactly on the
+    /// arc at 45°.
+    private static let circleK: CGFloat = 4 * (sqrt(2) - 1) / 3
+
     func path(in rect: CGRect) -> Path {
         let f = min(flare, rect.width / 2)
         let br = min(bottomRadius, min(rect.width / 2 - f, rect.height / 2))
+        let kf = f * Self.circleK
+        let kb = br * Self.circleK
 
         var p = Path()
+
         // Full width along the very top edge of the display.
         p.move(to: CGPoint(x: rect.minX, y: rect.minY))
         p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        // Concave flare inward: control at the *inner* corner puts the centre of
-        // curvature outside the fill, which is what makes it cove rather than round.
-        p.addQuadCurve(to: CGPoint(x: rect.maxX - f, y: rect.minY + f),
-                       control: CGPoint(x: rect.maxX - f, y: rect.minY))
+
+        // Concave flare, top-right: leaves the top edge heading left, arrives at the
+        // side heading down. Centre of curvature is outside the fill, which is what
+        // makes it cove instead of round.
+        p.addCurve(to: CGPoint(x: rect.maxX - f, y: rect.minY + f),
+                   control1: CGPoint(x: rect.maxX - kf, y: rect.minY),
+                   control2: CGPoint(x: rect.maxX - f, y: rect.minY + f - kf))
+
         p.addLine(to: CGPoint(x: rect.maxX - f, y: rect.maxY - br))
-        p.addQuadCurve(to: CGPoint(x: rect.maxX - f - br, y: rect.maxY),
-                       control: CGPoint(x: rect.maxX - f, y: rect.maxY))
+
+        // Convex round, bottom-right.
+        p.addCurve(to: CGPoint(x: rect.maxX - f - br, y: rect.maxY),
+                   control1: CGPoint(x: rect.maxX - f, y: rect.maxY - br + kb),
+                   control2: CGPoint(x: rect.maxX - f - br + kb, y: rect.maxY))
+
         p.addLine(to: CGPoint(x: rect.minX + f + br, y: rect.maxY))
-        p.addQuadCurve(to: CGPoint(x: rect.minX + f, y: rect.maxY - br),
-                       control: CGPoint(x: rect.minX + f, y: rect.maxY))
+
+        // Convex round, bottom-left.
+        p.addCurve(to: CGPoint(x: rect.minX + f, y: rect.maxY - br),
+                   control1: CGPoint(x: rect.minX + f + br - kb, y: rect.maxY),
+                   control2: CGPoint(x: rect.minX + f, y: rect.maxY - br + kb))
+
         p.addLine(to: CGPoint(x: rect.minX + f, y: rect.minY + f))
-        p.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.minY),
-                       control: CGPoint(x: rect.minX + f, y: rect.minY))
+
+        // Concave flare, top-left: mirror of the top-right.
+        p.addCurve(to: CGPoint(x: rect.minX, y: rect.minY),
+                   control1: CGPoint(x: rect.minX + f, y: rect.minY + f - kf),
+                   control2: CGPoint(x: rect.minX + kf, y: rect.minY))
+
         p.closeSubpath()
         return p
     }

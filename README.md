@@ -131,6 +131,20 @@ is deliberate: it lives in the notch.
 To reach Settings, launch-at-login or Quit, either **right-click the buddy** (or the
 open panel), or use the **•••** button in the panel footer.
 
+### The corner where the panel meets the top edge
+
+Every corner of the panel is a **true quarter circle**, drawn as a cubic with the
+standard circle constant `4(√2−1)/3`. The top two are concave: the cutout flares *out*
+into the top edge of the display rather than rounding off, so black is added in that
+corner, not removed.
+
+This was originally a `addQuadCurve`, which cannot represent a circular arc at all — a
+quadratic through those endpoints passes through `(0.75r, 0.25r)` where the arc passes
+through `(0.707r, 0.293r)`. That is a 6.1% deviation, 1.2pt at the 20pt flare, and it
+is biased toward the top edge, so the curve visibly pulled inside the ideal arc near
+the top and read as clipped rather than swept. The cubic tracks the arc to within
+0.03%.
+
 There is deliberately no menu bar status item. On a notched Mac the bar fills up fast
 — measured here, only 55pt separated the cutout from the leftmost Control Center item,
 and the buddy already occupies 32 of it, while an icon-plus-percentage item needs
