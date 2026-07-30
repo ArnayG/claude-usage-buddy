@@ -22,6 +22,11 @@ final class NotchController {
     private let closeDelay: TimeInterval = 0.25
 
     var onRefresh: () -> Void = {}
+    var onSettings: () -> Void = {}
+    var onToggleLogin: () -> Void = {}
+    var onQuit: () -> Void = {}
+    /// Right-click menu, since there is no Dock icon and no room in the menu bar.
+    var menuProvider: () -> NSMenu = { NSMenu() }
 
     init(store: UsageStore) {
         self.store = store
@@ -50,10 +55,13 @@ final class NotchController {
         let hover = HoverView(frame: CGRect(origin: .zero, size: frame.size))
         hover.autoresizingMask = [.width, .height]
 
-        let root = NotchRootView(state: state, store: store, onRefresh: { [weak self] in
-            self?.onRefresh()
-        })
-        let hosting = NSHostingView(rootView: root)
+        let root = NotchRootView(state: state, store: store,
+                                 onRefresh: { [weak self] in self?.onRefresh() },
+                                 onSettings: { [weak self] in self?.onSettings() },
+                                 onToggleLogin: { [weak self] in self?.onToggleLogin() },
+                                 onQuit: { [weak self] in self?.onQuit() })
+        let hosting = MenuHostingView(rootView: root)
+        hosting.menuProvider = { [weak self] in self?.menuProvider() ?? NSMenu() }
         hosting.frame = hover.bounds
         hosting.autoresizingMask = [.width, .height]
         hover.addSubview(hosting)
@@ -76,7 +84,8 @@ final class NotchController {
 
         // Static: this window is on screen whenever the panel is closed, so an
         // animation timer here would be a permanent battery cost.
-        let view = NSHostingView(rootView: PeekRootView(store: store))
+        let view = MenuHostingView(rootView: PeekRootView(store: store))
+        view.menuProvider = { [weak self] in self?.menuProvider() ?? NSMenu() }
         view.frame = CGRect(origin: .zero, size: frame.size)
         view.autoresizingMask = [.width, .height]
         peek.contentView = view
@@ -184,6 +193,20 @@ final class NotchController {
     }
 }
 
+/// Hosts SwiftUI content and supplies a fresh context menu on secondary click.
+///
+/// The app has no Dock icon, and on a notched Mac the menu bar can be too full for a
+/// status item, so this is the only reachable route to Settings and Quit. Overriding
+/// `menu(for:)` hooks AppKit's built-in handling; an overlay view trying to catch
+/// `rightMouseDown` itself lost the event to SwiftUI's gesture recognisers.
+final class MenuHostingView<Content: View>: NSHostingView<Content> {
+    var menuProvider: (() -> NSMenu)?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        menuProvider?() ?? super.menu(for: event)
+    }
+}
+
 /// Observable bridge between AppKit hover events and the SwiftUI tree.
 @MainActor
 final class PanelState: ObservableObject {
@@ -202,10 +225,42 @@ private struct PeekRootView: View {
     }
 }
 
+
+private struct RightClickCatcher: NSViewRepresentable {
+    var menuProvider: () -> NSMenu
+
+    func makeNSView(context: Context) -> NSView { CatcherView(menuProvider: menuProvider) }
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? CatcherView)?.menuProvider = menuProvider
+    }
+
+    final class CatcherView: NSView {
+        var menuProvider: () -> NSMenu
+        init(menuProvider: @escaping () -> NSMenu) {
+            self.menuProvider = menuProvider
+            super.init(frame: .zero)
+        }
+        required init?(coder: NSCoder) { fatalError() }
+
+        // Only claim secondary clicks; primary clicks stay with the SwiftUI content
+        // underneath so poking the buddy still works.
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            NSApp.currentEvent?.type == .rightMouseDown ? self : nil
+        }
+
+        override func rightMouseDown(with event: NSEvent) {
+            NSMenu.popUpContextMenu(menuProvider(), with: event, for: self)
+        }
+    }
+}
+
 private struct NotchRootView: View {
     @ObservedObject var state: PanelState
     @ObservedObject var store: UsageStore
     var onRefresh: () -> Void
+    var onSettings: () -> Void
+    var onToggleLogin: () -> Void
+    var onQuit: () -> Void
 
     var body: some View {
         Group {
@@ -213,7 +268,10 @@ private struct NotchRootView: View {
                 ExpandedView(snapshot: store.snapshot,
                              now: state.now,
                              isProbing: store.isProbing,
-                             onRefresh: onRefresh)
+                             onRefresh: onRefresh,
+                             onSettings: onSettings,
+                             onToggleLogin: onToggleLogin,
+                             onQuit: onQuit)
                     .transition(.opacity)
             } else {
                 CollapsedView(fraction: store.snapshot.fraction,

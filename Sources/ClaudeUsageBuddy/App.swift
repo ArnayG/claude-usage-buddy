@@ -1,5 +1,4 @@
 import AppKit
-import Combine
 import SwiftUI
 
 @main
@@ -85,44 +84,26 @@ enum Main {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = UsageStore()
     private lazy var notch = NotchController(store: store)
-    private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
-    private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         store.start()
 
         notch.onRefresh = { [weak self] in self?.store.forceRefresh() }
+        notch.menuProvider = { [weak self] in self?.buildMenu() ?? NSMenu() }
+        notch.onSettings = { [weak self] in self?.openSettings() }
+        notch.onToggleLogin = { _ = LoginItem.set(!LoginItem.isEnabled) }
+        notch.onQuit = { NSApp.terminate(nil) }
         notch.install()
-
-        installStatusItem()
-
-        store.$snapshot
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.refreshStatusTitle() }
-            .store(in: &cancellables)
     }
 
-    // MARK: - Status item
+    // MARK: - Menu
     //
-    // The fallback surface on Macs with no notch, and the keyboard-reachable path,
-    // which a hover-only UI would not be.
-
-    private func installStatusItem() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(systemSymbolName: "gauge.with.needle",
-                                     accessibilityDescription: "Claude usage")
-        item.button?.imagePosition = .imageLeading
-        item.menu = buildMenu()
-        statusItem = item
-        refreshStatusTitle()
-    }
-
-    private func refreshStatusTitle() {
-        let s = store.snapshot
-        statusItem?.button?.title = s.isUnverified ? " —" : String(format: " %.0f%%", s.percent)
-        statusItem?.menu = buildMenu()
-    }
+    // There is deliberately no NSStatusItem. On a notched Mac the menu bar fills up
+    // fast: measured here, only 55pt separated the cutout from the leftmost Control
+    // Center item, and the buddy already sits in 32 of it. An icon-plus-percentage
+    // item needs ~62pt, so macOS silently hid it — the app had no reachable menu at
+    // all. Right-clicking the buddy or the panel opens this instead.
 
     private func buildMenu() -> NSMenu {
         let s = store.snapshot
@@ -149,8 +130,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(action("Refresh now", #selector(refreshNow)))
         menu.addItem(action("Settings…", #selector(openSettingsMenu), key: ","))
+        let login = action(LoginItem.isEnabled ? "Disable launch at login" : "Launch at login",
+                           #selector(toggleLoginItem))
+        menu.addItem(login)
         menu.addItem(.separator())
-        menu.addItem(action("Quit", #selector(quit), key: "q"))
+        menu.addItem(action("Quit Claude Usage Buddy", #selector(quit), key: "q"))
         return menu
     }
 
@@ -167,6 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func refreshNow() { store.forceRefresh() }
+    @objc private func toggleLoginItem() { _ = LoginItem.set(!LoginItem.isEnabled) }
     @objc private func openSettingsMenu() { openSettings() }
     @objc private func quit() { NSApp.terminate(nil) }
 

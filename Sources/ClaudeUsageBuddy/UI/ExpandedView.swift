@@ -8,6 +8,9 @@ struct ExpandedView: View {
     let now: Date
     var isProbing: Bool = false
     var onRefresh: () -> Void
+    var onSettings: () -> Void = {}
+    var onToggleLogin: () -> Void = {}
+    var onQuit: () -> Void = {}
 
     /// Height of the physical cutout; content must clear it.
     private let notchInset: CGFloat = 32
@@ -102,6 +105,28 @@ struct ExpandedView: View {
                     .overlay(Capsule().stroke(Color.white.opacity(0.13), lineWidth: 1))
             }
             .buttonStyle(.plain)
+
+            // Visible on purpose. With no Dock icon and no room in the menu bar for a
+            // status item, a right-click-only menu would leave no discoverable way to
+            // reach Settings or quit the app.
+            Menu {
+                Button("Settings…", action: onSettings)
+                Button(LoginItem.isEnabled ? "Disable launch at login" : "Launch at login",
+                       action: onToggleLogin)
+                Divider()
+                Button("Quit Claude Usage Buddy", action: onQuit)
+            } label: {
+                Text("•••")
+                    .font(.system(size: 9, weight: .black))
+                    .foregroundStyle(Theme.primaryText.opacity(0.9))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4.5)
+                    .background(Capsule().fill(Color.white.opacity(0.11)))
+                    .overlay(Capsule().stroke(Color.white.opacity(0.13), lineWidth: 1))
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
         }
     }
 
