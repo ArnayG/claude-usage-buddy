@@ -71,69 +71,66 @@ enum Theme {
 
     static let cornerRadius: CGFloat = 22
 
-    /// How far the top corners cove outward to meet the edge of the display, and how
-    /// far down they reach. Wide and shallow — see `NotchPanelShape`.
-    static let coveWidth: CGFloat = 22
-    static let coveDepth: CGFloat = 9
+    /// Radius of the quarter-circle cove where the panel meets the top of the display.
+    /// Circular on both axes by definition — see `NotchPanelShape`.
+    static let coveRadius: CGFloat = 14
 }
 
-/// The expanded panel's silhouette: coving outward into the top edge of the display,
-/// rounded at the bottom.
+/// The expanded panel's silhouette: a true circular cove into the top edge of the
+/// display, rounded at the bottom.
 ///
 /// The top corners **add** black, sweeping outward to meet the top edge, the way the
 /// display's active area curves around the real cutout. Rounding them off instead —
 /// removing black — narrows the panel exactly where the hardware widens it.
 ///
-/// The cove is deliberately **asymmetric**: wide horizontally, shallow vertically. An
-/// earlier version used a quarter circle, equal in both directions, and at a radius big
-/// enough to be visible it scooped a third of the way down the menu bar and read as a
-/// pair of hooks rather than a transition. Sweeping the same distance sideways while
-/// staying shallow gives the same "eases into the top edge" impression without the
-/// gouge.
+/// The cove is a **quarter circle**, and getting that exactly right matters more than
+/// its size. Two earlier versions missed it in different ways: one used a quadratic
+/// curve, which cannot describe a circular arc at all, and one used an ellipse (wider
+/// than deep) with a deliberately flattened middle. Both read as a generic arc rather
+/// than a corner, because Apple's hardware and software corners are circular and the
+/// eye is calibrated to that.
 ///
-/// Drawn as a cubic with the control points placed along the tangents, so the curve
-/// leaves the vertical edge going straight up and meets the top edge going straight
-/// out. A circular arc is tangent-continuous but not curvature-continuous, and the
-/// resulting kink is exactly what makes a corner look cheap next to Apple's.
+/// So: equal width and depth, and `circleControl` is the exact cubic-Bezier constant
+/// for a quarter circle — 4/3·(√2−1). At that value a cubic matches a true arc to
+/// within about 0.02% of the radius; nudging it, as an earlier revision did to taste,
+/// is what turns a circle into "some curve".
 struct NotchPanelShape: Shape {
-    /// How far the cove reaches sideways past the body.
-    var coveWidth: CGFloat = Theme.coveWidth
-    /// How far down it reaches. Much less than the width, on purpose.
-    var coveDepth: CGFloat = Theme.coveDepth
+    /// Radius of the quarter-circle cove. Applies to both axes: it is a circle.
+    var coveRadius: CGFloat = Theme.coveRadius
     var bottomRadius: CGFloat = Theme.cornerRadius
 
-    /// Fraction of the span the control points sit along. 0.45 approximates a circular
-    /// quadrant; higher values flatten the middle and tighten the ends, which is what
-    /// keeps a shallow cove from looking like a chamfer.
-    private let controlRatio: CGFloat = 0.62
+    /// 4/3·(tan(45°/2)) = 4/3·(√2−1). The standard constant for approximating a
+    /// quarter circle with one cubic segment.
+    private let circleControl: CGFloat = 0.5522847498307936
 
     func path(in rect: CGRect) -> Path {
-        let w = min(coveWidth, rect.width / 4)
-        let d = min(coveDepth, rect.height / 4)
-        let br = min(bottomRadius, min(rect.width / 2 - w, rect.height / 2))
+        let r = min(coveRadius, min(rect.width / 4, rect.height / 4))
+        let br = min(bottomRadius, min(rect.width / 2 - r, rect.height / 2))
+        let k = r * circleControl
 
         var p = Path()
         // Full width along the very top edge of the display.
         p.move(to: CGPoint(x: rect.minX, y: rect.minY))
         p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
 
-        // Right cove: out at the top edge, in and down to the body's edge.
-        p.addCurve(to: CGPoint(x: rect.maxX - w, y: rect.minY + d),
-                   control1: CGPoint(x: rect.maxX - w * controlRatio, y: rect.minY),
-                   control2: CGPoint(x: rect.maxX - w, y: rect.minY + d * (1 - controlRatio)))
+        // Right cove — quarter circle centred at (maxX, minY + r), so the curve leaves
+        // the top edge horizontally and joins the body's edge vertically.
+        p.addCurve(to: CGPoint(x: rect.maxX - r, y: rect.minY + r),
+                   control1: CGPoint(x: rect.maxX - k, y: rect.minY),
+                   control2: CGPoint(x: rect.maxX - r, y: rect.minY + r - k))
 
-        p.addLine(to: CGPoint(x: rect.maxX - w, y: rect.maxY - br))
-        p.addQuadCurve(to: CGPoint(x: rect.maxX - w - br, y: rect.maxY),
-                       control: CGPoint(x: rect.maxX - w, y: rect.maxY))
-        p.addLine(to: CGPoint(x: rect.minX + w + br, y: rect.maxY))
-        p.addQuadCurve(to: CGPoint(x: rect.minX + w, y: rect.maxY - br),
-                       control: CGPoint(x: rect.minX + w, y: rect.maxY))
-        p.addLine(to: CGPoint(x: rect.minX + w, y: rect.minY + d))
+        p.addLine(to: CGPoint(x: rect.maxX - r, y: rect.maxY - br))
+        p.addQuadCurve(to: CGPoint(x: rect.maxX - r - br, y: rect.maxY),
+                       control: CGPoint(x: rect.maxX - r, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX + r + br, y: rect.maxY))
+        p.addQuadCurve(to: CGPoint(x: rect.minX + r, y: rect.maxY - br),
+                       control: CGPoint(x: rect.minX + r, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX + r, y: rect.minY + r))
 
         // Left cove, mirrored.
         p.addCurve(to: CGPoint(x: rect.minX, y: rect.minY),
-                   control1: CGPoint(x: rect.minX + w, y: rect.minY + d * (1 - controlRatio)),
-                   control2: CGPoint(x: rect.minX + w * controlRatio, y: rect.minY))
+                   control1: CGPoint(x: rect.minX + r, y: rect.minY + r - k),
+                   control2: CGPoint(x: rect.minX + k, y: rect.minY))
         p.closeSubpath()
         return p
     }

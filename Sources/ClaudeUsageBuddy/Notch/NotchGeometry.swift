@@ -8,7 +8,7 @@ import AppKit
 enum NotchGeometry {
     /// Size of the panel once expanded.
     ///
-    /// 440pt of body, plus `Theme.coveWidth` either side: the top corners sweep
+    /// 440pt of body, plus `Theme.coveRadius` either side: the top corners sweep
     /// outward past the body to meet the edge of the display, so the frame is wider
     /// than the panel looks. See `NotchPanelShape`.
     ///
@@ -28,7 +28,7 @@ enum NotchGeometry {
         + 24       // footer
         + 12       // bottom padding
 
-    static let expandedSize = CGSize(width: 440 + 2 * Theme.coveWidth, height: expandedHeight)
+    static let expandedSize = CGSize(width: 440 + 2 * Theme.coveRadius, height: expandedHeight)
 
     /// The always-visible creature, sitting in the menu bar strip to the right of
     /// the camera. 32×22 renders the trimmed sprite at exactly 2pt per cell.

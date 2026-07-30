@@ -67,7 +67,7 @@ struct ExpandedView: View {
         }
         // +cove so content keeps its 22pt margin from the *body* edge, which sits
         // inside the frame by the width of the cove.
-        .padding(.horizontal, 22 + Theme.coveWidth)
+        .padding(.horizontal, 22 + Theme.coveRadius)
         .padding(.bottom, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // No outline: a light stroke traced the whole silhouette, including the
