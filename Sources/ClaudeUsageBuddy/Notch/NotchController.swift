@@ -230,34 +230,6 @@ private struct PeekRootView: View {
 }
 
 
-private struct RightClickCatcher: NSViewRepresentable {
-    var menuProvider: () -> NSMenu
-
-    func makeNSView(context: Context) -> NSView { CatcherView(menuProvider: menuProvider) }
-    func updateNSView(_ nsView: NSView, context: Context) {
-        (nsView as? CatcherView)?.menuProvider = menuProvider
-    }
-
-    final class CatcherView: NSView {
-        var menuProvider: () -> NSMenu
-        init(menuProvider: @escaping () -> NSMenu) {
-            self.menuProvider = menuProvider
-            super.init(frame: .zero)
-        }
-        required init?(coder: NSCoder) { fatalError() }
-
-        // Only claim secondary clicks; primary clicks stay with the SwiftUI content
-        // underneath so poking the buddy still works.
-        override func hitTest(_ point: NSPoint) -> NSView? {
-            NSApp.currentEvent?.type == .rightMouseDown ? self : nil
-        }
-
-        override func rightMouseDown(with event: NSEvent) {
-            NSMenu.popUpContextMenu(menuProvider(), with: event, for: self)
-        }
-    }
-}
-
 private struct NotchRootView: View {
     @ObservedObject var state: PanelState
     @ObservedObject var store: UsageStore

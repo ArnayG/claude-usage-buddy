@@ -240,6 +240,37 @@ enum UsageProbe {
         return Int(line[digits].replacingOccurrences(of: ",", with: ""))
     }
 
+    private static let absoluteFormats = ["MMM d 'at' h:mma", "MMM d 'at' HH:mm",
+                                         "MMM d, h:mma", "MMM d h:mma"]
+    private static let timeOnlyFormats = ["h:mma", "HH:mm", "h:mm a"]
+
+    /// `DateFormatter` is expensive to build, and these were being constructed inside
+    /// the parse loops — up to seven per probe. Cached per time zone instead, which is
+    /// the only thing that varies between calls.
+    private static let parserCache = NSCache<NSString, NSArray>()
+
+    private static func parsers(_ formats: [String], in zone: TimeZone, tag: String) -> [DateFormatter] {
+        let key = "\(tag)|\(zone.identifier)" as NSString
+        if let cached = parserCache.object(forKey: key) as? [DateFormatter] { return cached }
+        let built = formats.map { format -> DateFormatter in
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.timeZone = zone
+            f.dateFormat = format
+            return f
+        }
+        parserCache.setObject(built as NSArray, forKey: key)
+        return built
+    }
+
+    private static func absoluteParsers(in zone: TimeZone) -> [DateFormatter] {
+        parsers(absoluteFormats, in: zone, tag: "abs")
+    }
+
+    private static func timeOnlyParsers(in zone: TimeZone) -> [DateFormatter] {
+        parsers(timeOnlyFormats, in: zone, tag: "time")
+    }
+
     /// Tolerant of the several shapes this string has taken ("Jul 29 at 2:40am",
     /// "today at 2:40am", a bare "2:40am"). The year is never included, so it is
     /// inferred — and corrected across a New Year boundary.
@@ -257,11 +288,7 @@ enum UsageProbe {
         calendar.timeZone = zone
 
         // Absolute forms first — they carry a month and day.
-        for format in ["MMM d 'at' h:mma", "MMM d 'at' HH:mm", "MMM d, h:mma", "MMM d h:mma"] {
-            let f = DateFormatter()
-            f.locale = Locale(identifier: "en_US_POSIX")
-            f.timeZone = zone
-            f.dateFormat = format
+        for f in Self.absoluteParsers(in: zone) {
             guard let parsed = f.date(from: text) else { continue }
 
             let parts = calendar.dateComponents([.month, .day, .hour, .minute], from: parsed)
@@ -280,11 +307,7 @@ enum UsageProbe {
         }
 
         // Time-only forms: today, or tomorrow if that has already passed.
-        for format in ["h:mma", "HH:mm", "h:mm a"] {
-            let f = DateFormatter()
-            f.locale = Locale(identifier: "en_US_POSIX")
-            f.timeZone = zone
-            f.dateFormat = format
+        for f in Self.timeOnlyParsers(in: zone) {
             guard let parsed = f.date(from: text) else { continue }
             let hm = calendar.dateComponents([.hour, .minute], from: parsed)
             guard var candidate = calendar.date(bySettingHour: hm.hour ?? 0,

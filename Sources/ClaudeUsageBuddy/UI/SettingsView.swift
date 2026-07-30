@@ -45,7 +45,7 @@ struct SettingsView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("Claude Usage Buddy").font(.title2.weight(.semibold))
-            Text("Current window: \(Format.exact(store.snapshot.used)) tokens · \(String(format: "%.1f", store.snapshot.percent))%")
+            Text("Current window: \(Format.exact(store.snapshot.used)) tokens · \(Format.percent(store.snapshot.percent))")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()

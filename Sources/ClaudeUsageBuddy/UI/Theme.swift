@@ -176,6 +176,13 @@ enum Format {
         return "\(total / 86_400)d \((total % 86_400) / 3600)h"
     }
 
+    /// "37.0%". One helper because six call sites had grown their own
+    /// `String(format: "%.1f%%")`, which is the kind of thing that drifts a decimal
+    /// place apart without anyone noticing.
+    static func percent(_ value: Double, decimals: Int = 1) -> String {
+        String(format: "%.\(decimals)f%%", value)
+    }
+
     /// "2h 14m" / "48m" / "under a minute"
     static func duration(_ interval: TimeInterval) -> String {
         let total = Int(interval.rounded())

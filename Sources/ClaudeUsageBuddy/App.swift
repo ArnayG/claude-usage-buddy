@@ -84,7 +84,7 @@ enum Main {
             cache write  : \(Format.exact(counts.cacheCreation))
           cached re-read : \(Format.exact(counts.cacheRead))   (excluded)
           raw total      : \(Format.exact(counts.total))
-          session used   : \(percent.map { String(format: "%.1f%%", $0) } ?? "unknown")
+          session used   : \(percent.map { Format.percent($0) } ?? "unknown")
           window start   : \(start.map(Format.time) ?? "—")\(windowStart == nil ? " (inferred locally)" : "")
           resets at      : \(resetAt.map(Format.time) ?? "—")
           resets in      : \(resetAt.map { Format.duration(max($0.timeIntervalSince(now), 0)) } ?? "—")
@@ -114,7 +114,7 @@ enum Main {
         guard let percent = weekly.percent else {
             return "not reported by /usage (no weekly limit on this plan)"
         }
-        return String(format: "%.1f%%", percent) + (weekly.limitLabel.map { "  (\($0))" } ?? "")
+        return Format.percent(percent) + (weekly.limitLabel.map { "  (\($0))" } ?? "")
     }
 }
 
@@ -152,15 +152,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // figures, which is the same division of labour as the ring and this menu's
         // percentage line.
         for model in ModelUsage.capped(s.byModel, to: 5) {
-            let share = model.share(of: s.used) * 100
-            menu.addItem(disabled(String(format: "  %@ %@  (%.1f%% of new)",
-                                         model.name, Format.exact(model.used), share)))
+            let share = Format.percent(model.share(of: s.used) * 100)
+            menu.addItem(disabled("  \(model.name) \(Format.exact(model.used))  (\(share) of new)"))
         }
         menu.addItem(disabled("  + \(Format.exact(s.contextReplay)) cached context re-read"))
         if s.isUnverified {
             menu.addItem(disabled("Session used: reading /usage…"))
         } else {
-            menu.addItem(disabled(String(format: "Session used: %.1f%%", s.percent)))
+            menu.addItem(disabled("Session used: \(Format.percent(s.percent))"))
         }
         if let reset = s.resetAt {
             menu.addItem(disabled("Resets \(Format.time(reset)) · in \(Format.duration(max(reset.timeIntervalSinceNow, 0)))"))
@@ -183,7 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let percent = s.weekly.percent {
             let label = s.weekly.limitLabel.map { " (\($0))" } ?? ""
-            menu.addItem(disabled(String(format: "This week%@: %.1f%% used", label, percent)))
+            menu.addItem(disabled("This week\(label): \(Format.percent(percent)) used"))
         } else if !s.isUnverified {
             menu.addItem(disabled("No weekly limit reported by /usage"))
         }

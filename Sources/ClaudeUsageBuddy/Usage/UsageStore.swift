@@ -56,8 +56,8 @@ final class UsageStore: ObservableObject {
     /// usage on another device, so back right off. This is also what keeps the
     /// average cost down: the CLI spawn is the expensive part.
     private let idleProbeInterval: TimeInterval = 600
-    /// Guards only against double-clicks; a forced refresh ignores everything else.
-    private let forcedProbeFloor: TimeInterval = 3
+    /// Guards only against a double-click landing two probes on top of each other.
+    private let doubleClickFloor: TimeInterval = 3
 
     func start() {
         recomputeTokens()
@@ -82,7 +82,7 @@ final class UsageStore: ObservableObject {
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.probe(force: true) }
+            Task { @MainActor in self?.probe() }
         }
     }
 
@@ -91,7 +91,7 @@ final class UsageStore: ObservableObject {
     func refresh() {
         recomputeTokens()
         if let last = lastProbeAttempt, Date().timeIntervalSince(last) < 15 { return }
-        probe(force: true)
+        probe()
     }
 
     /// The Refresh button. Always probes — an earlier version routed this through the
@@ -99,7 +99,7 @@ final class UsageStore: ObservableObject {
     /// left a stale percentage on screen.
     func forceRefresh() {
         recomputeTokens()
-        probe(force: true)
+        probe()
     }
 
     /// Fast while Claude is in use, slow when it is not.
@@ -185,10 +185,16 @@ final class UsageStore: ObservableObject {
 
     // MARK: - Probe
 
-    private func probe(force: Bool = false) {
+    /// Runs a probe now.
+    ///
+    /// There is no `force:` flag: whether it is *due* is `probeIfDue`'s job, and every
+    /// caller here has already decided it wants one. An earlier version took the flag
+    /// and ignored it, which read as though four of the six call sites were bypassing a
+    /// throttle they were not.
+    private func probe() {
         guard !isProbing else { return }
-        if let last = lastProbeAttempt, Date().timeIntervalSince(last) < forcedProbeFloor { return }
-        _ = force   // scheduling is decided by probeIfDue; this call always runs
+        // Only guard against double-clicks; the interval logic lives in `probeIfDue`.
+        if let last = lastProbeAttempt, Date().timeIntervalSince(last) < doubleClickFloor { return }
         lastProbeAttempt = Date()
         isProbing = true
 

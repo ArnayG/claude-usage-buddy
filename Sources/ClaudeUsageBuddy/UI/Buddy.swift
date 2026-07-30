@@ -136,16 +136,17 @@ enum BuddyMood: Int, CaseIterable {
 /// it already carries the green→amber→red signal, so this ramp only has to read as
 /// "the life is draining out of it".
 enum BuddyPalette {
-    static let healthy = Color(red: 0.851, green: 0.467, blue: 0.341)  // #D97757
-    static let dull    = Color(red: 0.773, green: 0.416, blue: 0.298)  // #C56A4C
-    static let ill     = Color(red: 0.651, green: 0.380, blue: 0.322)  // #A66152
-    static let ashen   = Color(red: 0.549, green: 0.357, blue: 0.341)  // #8C5B57
-
+    /// The ramp, as one list.
+    ///
+    /// An earlier version also declared `healthy` / `dull` / `ill` / `ashen` with the
+    /// same components spelled out again, which is two places to change and no check
+    /// that they agree. Nothing referenced them, so they are gone; the hex comments
+    /// carry the documentation they were providing.
     private static let stops: [(at: Double, r: Double, g: Double, b: Double)] = [
-        (0.00, 0.851, 0.467, 0.341),
-        (0.55, 0.773, 0.416, 0.298),
-        (0.80, 0.651, 0.380, 0.322),
-        (1.00, 0.549, 0.357, 0.341),
+        (0.00, 0.851, 0.467, 0.341),   // #D97757  healthy clay
+        (0.55, 0.773, 0.416, 0.298),   // #C56A4C  duller
+        (0.80, 0.651, 0.380, 0.322),   // #A66152  desaturating
+        (1.00, 0.549, 0.357, 0.341),   // #8C5B57  ashen
     ]
 
     /// Interpolated, not stepped.
