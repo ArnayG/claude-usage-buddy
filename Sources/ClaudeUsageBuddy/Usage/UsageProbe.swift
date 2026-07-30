@@ -20,6 +20,36 @@ enum UsageProbe {
     struct Result: Equatable {
         var percent: Double
         var resetAt: Date?
+        var weekly = Weekly()
+    }
+
+    /// Whatever `/usage` is willing to say about the trailing week.
+    ///
+    /// Every field is optional because the weekly section of `/usage` is not uniform
+    /// across plans. On the account this was developed against there is **no weekly
+    /// percentage at all** — the only weekly line is
+    /// `Last 7d · 1361 requests · 7 sessions`, and the section it sits under is
+    /// prefaced with "Approximate, based on local sessions on this machine — does not
+    /// include other devices or claude.ai".
+    ///
+    /// So `percent` stays nil here and the UI must not invent one. It is parsed anyway
+    /// because plans with a published weekly cap do exist, and when the CLI reports one
+    /// it is authoritative in exactly the way the session percentage is. Nothing in
+    /// this type is ever derived from a denominator we guessed.
+    struct Weekly: Equatable {
+        /// Only ever set from a real `N% used` figure printed by the CLI.
+        var percent: Double?
+        var resetAt: Date?
+        /// The qualifier the CLI attached to the limit, e.g. "all models" or "Opus".
+        /// Kept so a per-model sub-limit is never displayed as if it were the overall
+        /// one.
+        var limitLabel: String?
+        /// From the `Last 7d · N requests · M sessions` line. Machine-local and
+        /// approximate, per the CLI's own disclaimer — label it as such.
+        var requests: Int?
+        var sessions: Int?
+
+        var hasPercent: Bool { percent != nil }
     }
 
     enum Failure: Error, CustomStringConvertible {
@@ -105,34 +135,109 @@ enum UsageProbe {
 
     /// Expects a line shaped like:
     /// `Current session: 57% used · resets Jul 29 at 2:40am (America/Indianapolis)`
+    ///
+    /// The session line is required; everything weekly is best-effort, because most of
+    /// it is absent on at least one real plan.
     static func parse(_ output: String, now: Date = Date()) throws -> Result {
-        guard let line = output
-            .split(separator: "\n")
-            .first(where: { $0.contains("Current session") })
+        let lines = output.split(separator: "\n").map(String.init)
+
+        guard let text = lines.first(where: { $0.contains("Current session") })
         else { throw Failure.unparsable(output) }
 
-        let text = String(line)
+        guard let percent = parsePercent(text) else { throw Failure.unparsable(text) }
 
-        guard let percentRange = text.range(of: #"([0-9]+(\.[0-9]+)?)\s*%"#, options: .regularExpression),
-              let percent = Double(text[percentRange]
-                  .replacingOccurrences(of: "%", with: "")
-                  .trimmingCharacters(in: .whitespaces))
-        else { throw Failure.unparsable(text) }
+        return Result(percent: percent,
+                      resetAt: parseResetClause(text, now: now),
+                      weekly: parseWeekly(lines, now: now))
+    }
 
-        var resetAt: Date?
-        if let resetsRange = text.range(of: "resets ") {
-            var tail = String(text[resetsRange.upperBound...])
-            var zone = TimeZone.current
-            // Trailing "(America/Indianapolis)" names the zone the time is given in.
-            if let open = tail.lastIndex(of: "("), let close = tail.lastIndex(of: ")"), open < close {
-                let name = String(tail[tail.index(after: open)..<close])
-                if let z = TimeZone(identifier: name.trimmingCharacters(in: .whitespaces)) { zone = z }
-                tail = String(tail[..<open])
+    /// First `N%` or `N.N%` in a line.
+    private static func parsePercent(_ text: String) -> Double? {
+        guard let range = text.range(of: #"([0-9]+(\.[0-9]+)?)\s*%"#, options: .regularExpression)
+        else { return nil }
+        return Double(text[range]
+            .replacingOccurrences(of: "%", with: "")
+            .trimmingCharacters(in: .whitespaces))
+    }
+
+    /// Everything after `resets `, resolved against the zone the CLI names in trailing
+    /// parentheses.
+    private static func parseResetClause(_ text: String, now: Date) -> Date? {
+        guard let resetsRange = text.range(of: "resets ") else { return nil }
+        var tail = String(text[resetsRange.upperBound...])
+        var zone = TimeZone.current
+        // Trailing "(America/Indianapolis)" names the zone the time is given in.
+        if let open = tail.lastIndex(of: "("), let close = tail.lastIndex(of: ")"), open < close {
+            let name = String(tail[tail.index(after: open)..<close])
+            if let z = TimeZone(identifier: name.trimmingCharacters(in: .whitespaces)) { zone = z }
+            tail = String(tail[..<open])
+        }
+        return parseResetTime(tail.trimmingCharacters(in: .whitespaces), zone: zone, now: now)
+    }
+
+    // MARK: - Weekly
+
+    /// Pulls the weekly figures out of the whole `/usage` block.
+    ///
+    /// Two independent things are looked for, and either can be missing:
+    ///
+    /// 1. A **real weekly percentage**, from a line whose *label* mentions a week and
+    ///    whose value reads `N% used` — `Current week (all models): 45% used · resets …`.
+    ///    Requiring both the label and the literal `% used` is what keeps this away
+    ///    from the breakdown bullets in the same block, which are full of percentages
+    ///    that are not limit shares at all ("84% of your usage was at >150k context",
+    ///    "Top MCP servers: claude-in-chrome 31%"). Reading one of those as a weekly
+    ///    limit would be exactly the class of bug this project already deleted once.
+    ///
+    /// 2. The `Last 7d · N requests · M sessions` counters. Those have no colon, so
+    ///    they can never be mistaken for a limit line.
+    static func parseWeekly(_ lines: [String], now: Date = Date()) -> Weekly {
+        var weekly = Weekly()
+
+        // Take the *highest* of several weekly limits when a plan publishes more than
+        // one (an overall cap plus a per-model cap, say). The binding limit is the one
+        // closest to being spent, and `limitLabel` carries which one it was so the UI
+        // can name it rather than implying it is the total.
+        for line in lines {
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            let label = String(line[line.startIndex..<colon])
+            guard label.lowercased().contains("week") else { continue }
+
+            let value = String(line[line.index(after: colon)...])
+            guard value.contains("% used"), let percent = parsePercent(value) else { continue }
+            guard percent > (weekly.percent ?? -1) else { continue }
+
+            weekly.percent = percent
+            weekly.resetAt = parseResetClause(value, now: now)
+            // "Current week (all models)" -> "all models".
+            if let open = label.firstIndex(of: "("), let close = label.lastIndex(of: ")"), open < close {
+                weekly.limitLabel = String(label[label.index(after: open)..<close])
+            } else {
+                weekly.limitLabel = nil
             }
-            resetAt = parseResetTime(tail.trimmingCharacters(in: .whitespaces), zone: zone, now: now)
         }
 
-        return Result(percent: percent, resetAt: resetAt)
+        // `Last 7d · 1361 requests · 7 sessions`. Also accept "7d"/"7 days" phrasing.
+        if let line = lines.first(where: {
+            let l = $0.lowercased()
+            return !l.contains(":") && (l.contains("last 7d") || l.contains("last 7 d"))
+        }) {
+            weekly.requests = firstInteger(before: "request", in: line)
+            weekly.sessions = firstInteger(before: "session", in: line)
+        }
+
+        return weekly
+    }
+
+    /// The number immediately preceding a word, e.g. `1361` in "· 1361 requests ·".
+    /// Matched by position rather than by index so the two counters cannot be swapped
+    /// if the CLI ever reorders them.
+    private static func firstInteger(before word: String, in line: String) -> Int? {
+        let pattern = "([0-9][0-9,]*)\\s+\(word)"
+        guard let range = line.range(of: pattern, options: [.regularExpression, .caseInsensitive]),
+              let digits = line[range].range(of: #"[0-9][0-9,]*"#, options: .regularExpression)
+        else { return nil }
+        return Int(line[digits].replacingOccurrences(of: ",", with: ""))
     }
 
     /// Tolerant of the several shapes this string has taken ("Jul 29 at 2:40am",

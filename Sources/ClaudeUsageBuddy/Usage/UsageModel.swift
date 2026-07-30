@@ -55,6 +55,13 @@ struct UsageSnapshot: Equatable {
     /// Set when the last probe failed, for an honest footer.
     var probeError: String?
 
+    /// Tokens seen on this Mac over the trailing 7 days. From transcripts, so it is a
+    /// **volume**, not a share of anything — see `weeklyFraction` for why there is
+    /// usually no share to show.
+    var weeklyCounts = TokenCounts()
+    /// Whatever `/usage` said about the week. Mostly nil in practice.
+    var weekly = UsageProbe.Weekly()
+
     static let empty = UsageSnapshot()
 
     /// Headline token figure — new content only, see `TokenCounts.fresh`.
@@ -63,6 +70,20 @@ struct UsageSnapshot: Equatable {
     /// measure of consumption, so it is kept out of the headline.
     var contextReplay: Int { counts.cacheRead }
     var fraction: Double { min(max(percent / 100, 0), 1) }
+
+    /// Headline weekly token figure — new content only, same rule as `used`.
+    var weeklyUsed: Int { weeklyCounts.fresh }
+
+    /// Nil unless `/usage` printed a real weekly percentage.
+    ///
+    /// Deliberately not a `Double` with a zero default: a weekly gauge must be absent
+    /// rather than empty when there is no figure, because an empty ring reads as "0%
+    /// of your week used" — a claim we cannot make. Anthropic publishes no weekly
+    /// denominator the app can see, and back-solving one from token counts is the
+    /// mistake that got the original calibration scheme deleted.
+    var weeklyFraction: Double? {
+        weekly.percent.map { min(max($0 / 100, 0), 1) }
+    }
 
     /// True before the first successful probe — the numbers on screen are not yet
     /// authoritative and the UI should say so.

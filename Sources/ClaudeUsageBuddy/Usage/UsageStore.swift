@@ -9,11 +9,14 @@ import Foundation
 ///   and aware of usage from claude.ai and other machines
 /// - local transcripts for the exact token count, which `/usage` does not report
 ///
+/// The trailing-week figures follow the same split: `/usage` supplies a weekly
+/// percentage *if the plan has one* (most do not), transcripts supply the 7-day token
+/// volume regardless. The two are never mixed into one number.
+///
 /// No credentials, no calibration, nothing inferred.
 @MainActor
 final class UsageStore: ObservableObject {
     @Published private(set) var snapshot = UsageSnapshot.empty
-    @Published private(set) var weekly = TokenCounts()
     @Published private(set) var lastUpdated: Date?
 
     private let scanner = TranscriptScanner()
@@ -118,9 +121,9 @@ final class UsageStore: ObservableObject {
             guard let start else { return }
             if entry.timestamp >= start { acc += entry.counts }
         }
+        next.weeklyCounts = UsageBlock.trailingWeek(from: entries, now: now)
         snapshot = next
         newestEntryAt = entries.map(\.timestamp).max()
-        weekly = UsageBlock.trailingWeek(from: entries, now: now)
         lastUpdated = now
     }
 
@@ -143,6 +146,7 @@ final class UsageStore: ObservableObject {
                     var next = self.snapshot
                     next.percent = result.percent
                     next.resetAt = result.resetAt
+                    next.weekly = result.weekly
                     // The window is defined by its reset, not by anything local.
                     next.windowStart = result.resetAt?.addingTimeInterval(-UsageBlock.windowLength)
                     next.probedAt = Date()
