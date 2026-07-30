@@ -7,7 +7,7 @@ BINARY   := .build/release/$(APP)
 # The app reads nothing but local files, so it never needs a keychain grant — and
 # without one there is no reason to maintain a signing certificate. Ad-hoc keeps the
 # build free of any keychain access at all, including at sign time.
-.PHONY: all build bundle run install clean kill icon
+.PHONY: all build bundle run install clean kill icon test-burn-rate
 
 all: bundle
 
@@ -34,6 +34,15 @@ install: bundle kill
 	rm -rf "/Applications/$(APP).app"
 	cp -R "$(BUNDLE)" /Applications/
 	open "/Applications/$(APP).app"
+
+# Synthetic-series checks for the burn-rate maths. There is no test target because
+# there is no Xcode here, so this compiles the real BurnRate.swift into a small
+# assertion runner — no copied logic to drift out of sync.
+test-burn-rate:
+	swiftc -O Sources/ClaudeUsageBuddy/Usage/BurnRate.swift \
+	       Sources/ClaudeUsageBuddy/UI/Theme.swift \
+	       Tools/burn-rate-tests.swift -o /tmp/cub-burn-rate-tests
+	/tmp/cub-burn-rate-tests
 
 # Regenerates the icon from the sprite in Buddy.swift, so the two never diverge.
 icon:

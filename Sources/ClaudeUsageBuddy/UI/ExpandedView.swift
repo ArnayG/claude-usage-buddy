@@ -1,11 +1,13 @@
 import SwiftUI
 
 /// The hover panel. Four readouts, in the order they matter:
-/// tokens used → allowance → percentage → reset.
+/// tokens used → percentage → reset → where the current rate lands.
 struct ExpandedView: View {
     let snapshot: UsageSnapshot
     /// Ticks once a second so the countdown stays live.
     let now: Date
+    /// Where the burn rate lands, as of the last probe. See `BurnRate`.
+    var projection: BurnRate.Projection = .unknown(.noSamples)
     var isProbing: Bool = false
     var onRefresh: () -> Void
     var onSettings: () -> Void = {}
@@ -70,6 +72,14 @@ struct ExpandedView: View {
                 }
             }
 
+            Rectangle()
+                .fill(Theme.hairline)
+                .frame(height: 1)
+                .padding(.top, 11)
+                .padding(.bottom, 9)
+
+            projectionRow
+
             Spacer(minLength: 6)
             footer
         }
@@ -81,6 +91,60 @@ struct ExpandedView: View {
         // No outline: a light stroke traced the whole silhouette, including the
         // edges meeting the notch, and read as a halo separating panel from cutout.
         .background(NotchPanelShape().fill(Theme.panel))
+    }
+
+    /// The projection. Labelled "AT THIS RATE" because that is exactly what it is — an
+    /// extrapolation of the last half hour, not a fact — and it says so before it says a
+    /// time. When the trend cannot support a time this row states why instead; see
+    /// `BurnRate` for the gates.
+    private var projectionRow: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 3) {
+                Label2("AT THIS RATE")
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(projection.headline)
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundStyle(projectionColour)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+
+                    // The margin is part of the claim, not a footnote to it: where the
+                    // slope only just clears its own noise this can be wider than the
+                    // estimate is early, and hiding that would oversell it.
+                    if let margin = projection.marginText {
+                        Text(margin)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Theme.tertiaryText)
+                            .monospacedDigit()
+                    }
+                }
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 3) {
+                Label2("BURN")
+                Text(projection.rateText ?? "—")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Theme.secondaryText)
+                    .monospacedDigit()
+            }
+        }
+    }
+
+    /// Warmer as the projected time closes in, on the same green→amber→red logic the
+    /// ring uses. Anything that is not an actual projection stays quiet: a muted "need
+    /// more readings" should not compete with the number it is declining to give.
+    private var projectionColour: Color {
+        switch projection {
+        case .exhausts(let at, _, _, _):
+            let remaining = at.timeIntervalSince(now)
+            if remaining < 45 * 60 { return Theme.critical }
+            if remaining < 2 * 3600 { return Theme.warn }
+            return Theme.primaryText
+        case .spent:      return Theme.critical
+        case .resetsFirst, .notRising: return Theme.secondaryText
+        case .unknown:    return Theme.tertiaryText
+        }
     }
 
     private var footer: some View {

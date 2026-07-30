@@ -13,11 +13,15 @@ your current Claude session window you've used and when it resets.
    │  ────────────────────────────────  │
    │  RESETS IN            AT           │
    │  1h 20m               9:40 PM      │
-   │  ● solved       [Recalibrate]      │
+   │  ────────────────────────────────  │
+   │  AT THIS RATE              BURN    │
+   │  full by 8:44 PM ±9m     +15%/h    │
+   │  ● from /usage      [Refresh]      │
    ╰────────────────────────────────────╯
 ```
 
-Three readouts, by design: **tokens used**, **percentage**, **reset time**.
+Four readouts, by design: **tokens used**, **percentage**, **reset time**, and where the
+current **burn rate** lands.
 
 And a buddy, who is having a progressively worse time as you spend your window.
 
@@ -142,6 +146,7 @@ the hour can shift the countdown by up to an hour in the wrong direction.
 ```
 percentage + reset time   ←  claude -p "/usage"      (authoritative, free)
 token count               ←  ~/.claude transcripts   (exact, real-time)
+burn-rate projection      ←  successive percentages  (an estimate, labelled as one)
 ```
 
 Earlier versions tried to *infer* the percentage: back-solving a token allowance from
@@ -194,6 +199,65 @@ cheapest token type by an order of magnitude. The raw figure is still available 
 
 There is nothing to calibrate, and no settings that affect accuracy.
 
+## Burn rate: "full by 8:44 PM"
+
+The bottom row extrapolates the trend and says when the window will be spent — or that it
+won't be. It is the one number in the app that is an **estimate**, which is why the label
+above it reads `AT THIS RATE` and why it shows its own error bar.
+
+The rate is measured from **successive `/usage` percentages** and nothing else. The
+tempting alternative — the local token rate, which is continuous and finely resolved —
+cannot be converted into a percentage without a tokens-per-window allowance, and that
+constant is exactly the calibration [described above](#where-the-numbers-come-from) that
+was deleted for being wrong. Transcripts also cannot see claude.ai or another machine, so
+a local-only rate would report "not on track" while the window filled up elsewhere.
+
+The percentage arrives as a **whole number**, so one sample carries up to ±0.5pp of
+rounding error and a two-sample slope 60s apart is ±60pp/hour of pure noise. Instead the
+app fits a weighted least-squares line through up to an hour of readings, with weights
+halving every 12 minutes. Measured across 30 rounding phases of the same true 18%/h
+series, the fitted rate varied by 0.68pp/h; the two-sample slope varied by 60pp/h.
+
+Because the fit reports a standard error, the app can tell when it does not know:
+
+| What you see | When |
+|---|---|
+| `full by 8:44 PM ±9m` | rising by more than ~2σ, and the cap arrives before the reset |
+| `resets before you run out` | genuinely rising, but the window resets first |
+| `not on track to run out` | flat, falling, or rising too weakly to distinguish from rounding |
+| `need more readings` | fewer than 3 readings, or under 8 minutes of baseline |
+| `trend too old to trust` | the newest reading is over 15 minutes old |
+
+The window is rolling, which the projection has to respect in three places. Readings from
+before the current window start are discarded, so the slow forward creep of the reset time
+and an outright rollover are handled by the same rule. A step down of 5pp or more between
+adjacent readings is treated as a block of old usage aging out at once, and the fit
+restarts after it rather than reading the cliff as a rate. And what gets extrapolated is
+the *net* rate — the derivative of the number on screen, which already has aging-out
+folded in — bounded by the reset, so the horizon is never more than five hours.
+
+Honest limitations, in the same spirit as the rest of this file:
+
+- It is a **linear** extrapolation of something that is not linear. Early in a window
+  nothing has aged out yet and the net rate equals the gross rate; later the net rate is
+  smaller. Recovering the gross rate from net percentages alone is underdetermined, so it
+  is not attempted.
+- The reset time itself **creeps forward**, so "resets before you run out" can become
+  wrong later in a window.
+- A pause bleeds the estimate down over tens of minutes rather than instantly. That is
+  deliberate — the alternative flaps between "20 minutes left" and "not on track" every
+  time you stop to read a diff — but it does mean a projection can lag reality by a while.
+- The reported margin assumes independent rounding errors. Rounding a smooth ramp is
+  actually a correlated sawtooth, so on unusually smooth series the margin is optimistic.
+  Real consumption is bursty enough that measured residuals dominate the floor.
+
+Roughly an hour of readings is kept in `UserDefaults` so the trend survives a relaunch.
+They are verbatim probe output, scoped to the current window, and about 3KB.
+
+```sh
+make test-burn-rate   # synthetic-series checks: rising, falling, flat, cliffs, rollovers
+```
+
 ## Layout
 
 ```
@@ -203,8 +267,8 @@ Sources/ClaudeUsageBuddy/
 │   ├── NotchGeometry.swift   derives the notch rect at runtime
 │   ├── NotchWindow.swift     borderless panel above the menu bar
 │   └── NotchController.swift hover state machine
-├── UI/                    Collapsed / Expanded / Calibration / Settings / Theme
-├── Usage/                 scanner, 5h window math, store, settings
+├── UI/                    Collapsed / Expanded / Settings / Theme
+├── Usage/                 scanner, 5h window math, burn rate, store, settings
 └── Support/LoginItem.swift
 ```
 

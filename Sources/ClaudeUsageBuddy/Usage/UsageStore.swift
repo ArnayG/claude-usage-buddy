@@ -16,6 +16,20 @@ final class UsageStore: ObservableObject {
     @Published private(set) var weekly = TokenCounts()
     @Published private(set) var lastUpdated: Date?
 
+    /// Where the current trend lands, recomputed on each successful probe.
+    ///
+    /// Deliberately *not* recomputed on the UI's one-second tick. The percentage is only
+    /// known at probe time, so re-running the extrapolation against a later `now` while
+    /// holding the level fixed would push the projected time steadily further away —
+    /// implying the user had stopped burning when nothing of the sort had been observed.
+    /// It is an "as of the last reading" answer, and `BurnRate.staleness` withdraws it
+    /// once that reading is too old to stand behind.
+    @Published private(set) var projection = BurnRate.Projection.unknown(.noSamples)
+
+    /// Percentage readings for the current window. Loaded from disk so a relaunch or a
+    /// wake does not throw away a trend that is still valid.
+    private var burnHistory = Settings.burnHistory
+
     private let scanner = TranscriptScanner()
     private var tokenTimer: Timer?
     private var probeTimer: Timer?
@@ -87,6 +101,7 @@ final class UsageStore: ObservableObject {
 
     /// Fast while Claude is in use, slow when it is not.
     private func probeIfDue() {
+        expireStaleProjection()
         let now = Date()
         let sinceProbe = lastProbeAttempt.map { now.timeIntervalSince($0) } ?? .infinity
 
@@ -124,6 +139,44 @@ final class UsageStore: ObservableObject {
         lastUpdated = now
     }
 
+    // MARK: - Burn rate
+
+    /// Files the new reading and re-derives the projection.
+    ///
+    /// `windowStart` is passed through so `BurnHistory` can drop samples the rolling
+    /// window has left behind; that single rule covers both the reset time creeping
+    /// forward and the window rolling over outright.
+    ///
+    /// `now` is the probe timestamp, not the wall clock, which is what anchors the answer
+    /// to the reading it was drawn from — see `projection`.
+    private func recordBurnSample(_ snapshot: UsageSnapshot) {
+        guard let probedAt = snapshot.probedAt else { return }
+        burnHistory.record(percent: snapshot.percent,
+                           at: probedAt,
+                           windowStart: snapshot.windowStart)
+        Settings.burnHistory = burnHistory
+        projection = BurnRate.project(percent: snapshot.percent,
+                                      resetAt: snapshot.resetAt,
+                                      history: burnHistory.samples,
+                                      now: probedAt)
+    }
+
+    /// Withdraws a projection once the reading behind it is too old to defend.
+    ///
+    /// Anchoring the projection at probe time is what makes it stable, but it also means
+    /// nothing retracts it on its own: if probing breaks — the CLI stops answering, or the
+    /// machine sits untouched — a rising trend measured a while ago would otherwise sit on
+    /// screen indefinitely. `BurnRate`'s own staleness gate cannot catch this, because it
+    /// is evaluated against the probe timestamp and so is fresh by construction. This runs
+    /// on the 20s scheduler tick, which is ample against a 15-minute threshold.
+    private func expireStaleProjection() {
+        guard projection.rate != nil else { return }
+        guard let probedAt = snapshot.probedAt,
+              Date().timeIntervalSince(probedAt) > BurnRate.staleness
+        else { return }
+        projection = .unknown(.stale)
+    }
+
     // MARK: - Probe
 
     private func probe(force: Bool = false) {
@@ -149,6 +202,7 @@ final class UsageStore: ObservableObject {
                     next.probeError = nil
                     self.snapshot = next
                     self.recomputeTokens()
+                    self.recordBurnSample(next)
                 case .failure(let error):
                     var next = self.snapshot
                     next.probeError = "\(error)"
