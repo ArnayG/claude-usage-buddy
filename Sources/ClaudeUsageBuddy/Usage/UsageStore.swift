@@ -122,6 +122,9 @@ final class UsageStore: ObservableObject {
             if entry.timestamp >= start { acc += entry.counts }
         }
         next.weeklyCounts = UsageBlock.trailingWeek(from: entries, now: now)
+        // Same entries, same window: the split is a regrouping of the headline, not a
+        // second measurement, so the two can never disagree.
+        next.byModel = ModelUsage.split(entries, since: start)
         snapshot = next
         newestEntryAt = entries.map(\.timestamp).max()
         lastUpdated = now

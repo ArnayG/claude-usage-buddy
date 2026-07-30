@@ -12,10 +12,21 @@ enum NotchGeometry {
     /// flare into the top edge of the display — the body only reaches this full
     /// width at the very top.
     ///
-    /// The height grew from 214 to fit the trailing-week section. It stays a single
-    /// panel rather than a second tab or a disclosure triangle: the whole interaction
-    /// is a hover, so anything needing a click to reveal would never be seen.
-    static let expandedSize = CGSize(width: 440 + 2 * Theme.topFlare, height: 304)
+/// The height is written as an explicit sum of the sections it has to fit. Three
+    /// features grew this number independently and every merge collided on it; a sum
+    /// also makes the cost of each section visible for the layout pass that will bring
+    /// the panel back down.
+    ///
+    /// It stays one panel rather than tabs or a disclosure triangle: the whole
+    /// interaction is a hover, so anything needing a click to reveal would never be
+    /// seen. Height is also the cheap dimension — the panel hangs from the top edge,
+    /// so growing downward only costs screen while you are actually hovering.
+    static let expandedHeight: CGFloat =
+        214        // session: ring, token count, buddy, reset row, footer
+        + 51       // per-model split bar and legend
+        + 90       // trailing-week section
+
+    static let expandedSize = CGSize(width: 440 + 2 * Theme.topFlare, height: expandedHeight)
 
     /// The always-visible creature, sitting in the menu bar strip to the right of
     /// the camera. 32×22 renders the trimmed sprite at exactly 2pt per cell.

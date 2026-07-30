@@ -11,6 +11,9 @@ got through in the last seven days.
    │  ╭───╮  NEW TOKENS     ┌──────┐    │
    │  │44%│    2,847,309   ─┤ ▪  ▪ ├─   │
    │  ╰───╯  this window    └┬┬──┬┬┘    │
+   │  SHARE OF NEW TOKENS               │
+   │  ██████████████████████████████  █ │
+   │  ■ Opus 99%    ■ Sonnet <1%        │
    │  ────────────────────────────────  │
    │  RESETS IN            AT           │
    │  1h 20m               9:40 PM      │
@@ -22,9 +25,9 @@ got through in the last seven days.
    ╰────────────────────────────────────╯
 ```
 
-The session window first — **tokens used**, **percentage**, **reset time** — then the
-trailing week underneath. Session comes first because it is the limit that stops you
-working today, and the only one whose number moves while you watch.
+The session window first — **tokens used**, **percentage**, **reset time** — then which
+models spent them, then the trailing week. Session comes first because it is the limit
+that stops you working today, and the only one whose number moves while you watch.
 
 And a buddy, who is having a progressively worse time as you spend your window.
 
@@ -62,6 +65,41 @@ cost — the ticker starts only while you are hovering or poking it.
 When you're not hovering there's nothing to see but a hairline gauge under the notch
 that shifts green → amber → red. The notch itself is a physical cutout with no pixels
 behind it, so the gauge lives in the few points of real screen just below.
+
+## The model split
+
+A stacked bar under the token count shows which models the window's new tokens came
+from — Opus, Sonnet, Haiku — with the exact figures on the right-click menu and in
+`--print-usage`.
+
+It is a share of **tokens observed on this Mac**, and deliberately not a share of the
+limit. `claude -p "/usage"` reports one session percentage and does not break it down by
+model, so a per-model *percentage of the limit* would have to be invented: the models do
+not draw on the allowance at the same rate, and transcripts cannot see usage from
+claude.ai or another machine. Hence the label "share of new tokens" rather than a bare
+percentage that could be read as a second opinion on the ring.
+
+Two details that only show up against real data:
+
+- **A dominant model is the normal case.** One window measured here ran 99.3% Opus /
+  0.7% Sonnet. A strictly proportional bar would have drawn the minority model as a
+  2.7pt sliver, and a rounding error would have erased it — so every non-zero slice has
+  a 5pt floor, paid for by the slices with room to give. The legend says `<1%` rather
+  than `0%` for the same reason.
+- **Model ids are not a fixed list.** `claude-haiku-4-5-20251001` is not a name anyone
+  wants to read, and hardcoding a table of ids would silently drop the next model
+  Anthropic ships. The family word is parsed out instead, which also handles the older
+  `claude-3-5-sonnet-20241022` ordering and Bedrock/Vertex decorations like
+  `us.anthropic.claude-sonnet-4-5-v1:0`. An unrecognised family still gets a readable
+  name and its own colour rather than disappearing.
+
+The palette is cool — periwinkle, sky, orchid — because warm colour on this panel is
+already spoken for twice: the ring runs green→amber→red for how spent the window is, and
+the buddy is clay. A warm slice would read as a third severity signal, and which model
+you used is not good or bad news.
+
+Past four models the tail groups into a grey **Other (n)** rather than being truncated,
+so the slices always sum to the headline.
 
 ## Requirements
 
@@ -255,9 +293,23 @@ Sources/ClaudeUsageBuddy/
 │   ├── NotchGeometry.swift   derives the notch rect at runtime
 │   ├── NotchWindow.swift     borderless panel above the menu bar
 │   └── NotchController.swift hover state machine
-├── UI/                    Collapsed / Expanded / Weekly / Settings / Theme
-├── Usage/                 scanner, 5h window math, store, settings
+├── UI/                    Collapsed / Expanded / ModelSplitBar / Weekly / Settings / Theme
+├── Usage/                 scanner, 5h window math, model split, store, settings
 └── Support/LoginItem.swift
+```
+
+`Tools/render-panel.swift` renders the panel offscreen to PNGs at 3×. There is no Xcode
+here, so no previews and no canvas, and screenshotting the real panel needs Screen
+Recording permission — this is how the layout actually gets looked at:
+
+```sh
+swiftc -O -parse-as-library \
+  Sources/ClaudeUsageBuddy/UI/{Theme,ExpandedView,ModelSplitBar,Buddy}.swift \
+  Sources/ClaudeUsageBuddy/Usage/{UsageModel,ModelSplit}.swift \
+  Sources/ClaudeUsageBuddy/Support/LoginItem.swift \
+  Sources/ClaudeUsageBuddy/Notch/NotchGeometry.swift \
+  Tools/render-panel.swift -o /tmp/render-panel
+/tmp/render-panel /tmp/panels
 ```
 
 Notch geometry is derived from `NSScreen.auxiliaryTopLeftArea` /

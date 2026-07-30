@@ -63,6 +63,7 @@ enum Main {
             for e in entries where e.timestamp >= start { counts += e.counts }
         }
         let weekly = UsageBlock.trailingWeek(from: entries, now: now)
+        let byModel = ModelUsage.split(entries, since: start)
 
         print("""
           entries parsed : \(entries.count)
@@ -82,6 +83,15 @@ enum Main {
           week used      : \(weeklyPercentLine(weeklyLimit))
           week resets in : \(weeklyLimit.resetAt.map { Format.longDuration(max($0.timeIntervalSince(now), 0)) } ?? "—")
         """)
+
+        // Shares of new tokens observed locally — deliberately not shares of the limit,
+        // which /usage does not break down and which cannot be derived from these.
+        print("  by model       : \(byModel.isEmpty ? "no tokens in window" : "")")
+        for model in byModel {
+            let name = model.name.padding(toLength: 10, withPad: " ", startingAt: 0)
+            let share = String(format: "%6.2f%%", model.share(of: counts.fresh) * 100)
+            print("    \(name) \(Format.exact(model.used)) new  \(share) of new")
+        }
         exit(0)
     }
 
@@ -126,6 +136,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
 
         menu.addItem(disabled("New tokens: \(Format.exact(s.used))"))
+        // The panel's bar carries the shape of the split; the menu carries the exact
+        // figures, which is the same division of labour as the ring and this menu's
+        // percentage line.
+        for model in ModelUsage.capped(s.byModel, to: 5) {
+            let share = model.share(of: s.used) * 100
+            menu.addItem(disabled(String(format: "  %@ %@  (%.1f%% of new)",
+                                         model.name, Format.exact(model.used), share)))
+        }
         menu.addItem(disabled("  + \(Format.exact(s.contextReplay)) cached context re-read"))
         if s.isUnverified {
             menu.addItem(disabled("Session used: reading /usage…"))

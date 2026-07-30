@@ -46,6 +46,11 @@ struct UsageEntry {
 struct UsageSnapshot: Equatable {
     /// Tokens seen on this Mac within the authoritative window.
     var counts = TokenCounts()
+    /// The same tokens, broken out by model family and sorted largest first.
+    ///
+    /// Shares of observed tokens only. There is no per-model percentage of the limit to
+    /// be had — see `ModelUsage.split(_:since:)`.
+    var byModel: [ModelUsage] = []
     /// Straight from `/usage`.
     var percent: Double = 0
     var resetAt: Date?
