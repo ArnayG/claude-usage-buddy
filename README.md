@@ -1,7 +1,8 @@
 # Claude Usage Buddy
 
 Hover the camera notch on a MacBook Pro and a panel drops down showing how much of
-your current Claude session window you've used and when it resets.
+your current Claude session window you've used, when it resets, and how much you have
+got through in the last seven days.
 
 ```
         ╭─────────────────────────╮
@@ -13,11 +14,17 @@ your current Claude session window you've used and when it resets.
    │  ────────────────────────────────  │
    │  RESETS IN            AT           │
    │  1h 20m               9:40 PM      │
-   │  ● solved       [Recalibrate]      │
+   │  ────────────────────────────────  │
+   │  LAST 7 DAYS           ACTIVITY    │
+   │  42.3M new tokens  1,361 req · 7   │
+   │  7-day total from this Mac         │
+   │  ● from /usage   [Refresh] [•••]   │
    ╰────────────────────────────────────╯
 ```
 
-Three readouts, by design: **tokens used**, **percentage**, **reset time**.
+The session window first — **tokens used**, **percentage**, **reset time** — then the
+trailing week underneath. Session comes first because it is the limit that stops you
+working today, and the only one whose number moves while you watch.
 
 And a buddy, who is having a progressively worse time as you spend your window.
 
@@ -142,6 +149,8 @@ the hour can shift the countdown by up to an hour in the wrong direction.
 ```
 percentage + reset time   ←  claude -p "/usage"      (authoritative, free)
 token count               ←  ~/.claude transcripts   (exact, real-time)
+7-day requests/sessions   ←  claude -p "/usage"      (this machine only)
+weekly percentage         ←  claude -p "/usage"      (usually absent — see below)
 ```
 
 Earlier versions tried to *infer* the percentage: back-solving a token allowance from
@@ -194,6 +203,49 @@ cheapest token type by an order of magnitude. The raw figure is still available 
 
 There is nothing to calibrate, and no settings that affect accuracy.
 
+## The weekly view, and the percentage it does not show
+
+The bottom section of the panel covers the trailing seven days. It shows a **token
+total**, not a share of a limit, and it says so on screen.
+
+That is not an oversight. `claude -p "/usage"` reports **no weekly percentage** on this
+account, and there is no other source the app can see. Its entire weekly output is:
+
+```
+Last 7d · 1361 requests · 7 sessions
+  84% of your usage was at >150k context
+  10% of your usage came from subagent-heavy sessions
+  Top MCP servers: claude-in-chrome 31%
+```
+
+Those percentages are traps. They are *characteristics* of the week's usage — how much
+of it happened at long context, which tools it went through — not fractions of any
+allowance. The section is even prefaced "Behaviors are independent characteristics, not
+a breakdown". Rendering any of them in a ring would be a straightforward lie.
+
+So the parser demands two things before it will believe a weekly percentage: the label
+before the colon must mention a week, *and* the value must literally read `N% used`.
+That is enough to accept `Current week (all models): 45% used · resets Aug 5`, which
+some plans do print, while rejecting every line above. When a real figure is found the
+weekly section grows a ring matching the session gauge, names which limit it is (an
+overall cap and a per-model cap are different things, and the higher of the two is
+shown with its label), and counts down to the weekly reset.
+
+When there is no figure — the common case — there is **no ring and no percentage**:
+
+| Shown | Source |
+|---|---|
+| 7-day new-token total | local transcripts, this Mac |
+| requests · sessions | `/usage`, explicitly "based on local sessions on this machine" |
+| a percentage | nothing — so nothing is shown |
+
+This project already shipped a weekly percentage once, inferred from a token allowance
+it back-solved from a number you typed in. It was wrong in the field and had to be
+deleted. Dividing a 7-day token count by a plausible-looking denominator would repeat
+that with less excuse, because unlike the session limit there is no real weekly
+quantity anywhere for it to converge on. A missing gauge is information. A confident
+wrong gauge is not.
+
 ## Layout
 
 ```
@@ -203,7 +255,7 @@ Sources/ClaudeUsageBuddy/
 │   ├── NotchGeometry.swift   derives the notch rect at runtime
 │   ├── NotchWindow.swift     borderless panel above the menu bar
 │   └── NotchController.swift hover state machine
-├── UI/                    Collapsed / Expanded / Calibration / Settings / Theme
+├── UI/                    Collapsed / Expanded / Weekly / Settings / Theme
 ├── Usage/                 scanner, 5h window math, store, settings
 └── Support/LoginItem.swift
 ```

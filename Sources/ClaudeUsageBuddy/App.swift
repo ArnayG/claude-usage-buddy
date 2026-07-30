@@ -42,10 +42,12 @@ enum Main {
         var percent: Double?
         var resetAt: Date?
         var windowStart: Date?
+        var weeklyLimit = UsageProbe.Weekly()
         do {
             let probe = try UsageProbe.run()
             percent = probe.percent
             resetAt = probe.resetAt
+            weeklyLimit = probe.weekly
             windowStart = probe.resetAt?.addingTimeInterval(-UsageBlock.windowLength)
             print("  /usage         : ok")
         } catch {
@@ -75,8 +77,22 @@ enum Main {
           resets at      : \(resetAt.map(Format.time) ?? "—")
           resets in      : \(resetAt.map { Format.duration(max($0.timeIntervalSince(now), 0)) } ?? "—")
           last 7 days    : \(Format.exact(weekly.fresh)) new  (\(Format.exact(weekly.total)) raw)
+            requests     : \(weeklyLimit.requests.map(Format.exact) ?? "not reported")
+            sessions     : \(weeklyLimit.sessions.map(Format.exact) ?? "not reported")
+          week used      : \(weeklyPercentLine(weeklyLimit))
+          week resets in : \(weeklyLimit.resetAt.map { Format.longDuration(max($0.timeIntervalSince(now), 0)) } ?? "—")
         """)
         exit(0)
+    }
+
+    /// Spells out the absence rather than printing a dash, because "no weekly
+    /// percentage exists" and "the parser missed it" look identical otherwise, and only
+    /// one of them is a bug worth chasing.
+    private static func weeklyPercentLine(_ weekly: UsageProbe.Weekly) -> String {
+        guard let percent = weekly.percent else {
+            return "not reported by /usage (no weekly limit on this plan)"
+        }
+        return String(format: "%.1f%%", percent) + (weekly.limitLabel.map { "  (\($0))" } ?? "")
     }
 }
 
@@ -125,7 +141,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(disabled("⚠ /usage: \(error)"))
         }
         menu.addItem(.separator())
-        menu.addItem(disabled("Last 7 days: \(Format.exact(store.weekly.total)) tokens"))
+        // Mirrors the panel's weekly section, including its refusal to show a
+        // percentage that /usage did not supply.
+        menu.addItem(disabled("Last 7 days: \(Format.exact(s.weeklyUsed)) new tokens (this Mac)"))
+        if let requests = s.weekly.requests {
+            let sessions = s.weekly.sessions.map { " · \(Format.exact($0)) sessions" } ?? ""
+            menu.addItem(disabled("  \(Format.exact(requests)) requests\(sessions)"))
+        }
+        if let percent = s.weekly.percent {
+            let label = s.weekly.limitLabel.map { " (\($0))" } ?? ""
+            menu.addItem(disabled(String(format: "This week%@: %.1f%% used", label, percent)))
+        } else if !s.isUnverified {
+            menu.addItem(disabled("No weekly limit reported by /usage"))
+        }
         menu.addItem(.separator())
 
         menu.addItem(action("Refresh now", #selector(refreshNow)))

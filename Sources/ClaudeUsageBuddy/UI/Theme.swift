@@ -109,6 +109,16 @@ enum Format {
             : String(format: "%.0f", v)
     }
 
+    /// "6d 4h" / "2h 14m" — for spans that can run to days.
+    ///
+    /// A weekly reset is up to seven days out, and `duration` counts hours without
+    /// bound, so it would render that as "163h 12m". Nobody reads that as a week.
+    static func longDuration(_ interval: TimeInterval) -> String {
+        let total = Int(interval.rounded())
+        guard total >= 24 * 3600 else { return duration(interval) }
+        return "\(total / 86_400)d \((total % 86_400) / 3600)h"
+    }
+
     /// "2h 14m" / "48m" / "under a minute"
     static func duration(_ interval: TimeInterval) -> String {
         let total = Int(interval.rounded())

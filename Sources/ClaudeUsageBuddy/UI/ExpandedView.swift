@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The hover panel. Four readouts, in the order they matter:
-/// tokens used → allowance → percentage → reset.
+/// The hover panel. Session first, week second — in that order because the session
+/// window is the limit that actually stops you working today, and the one whose number
+/// moves while you watch.
 struct ExpandedView: View {
     let snapshot: UsageSnapshot
     /// Ticks once a second so the countdown stays live.
@@ -70,7 +71,15 @@ struct ExpandedView: View {
                 }
             }
 
-            Spacer(minLength: 6)
+            Rectangle()
+                .fill(Theme.hairline)
+                .frame(height: 1)
+                .padding(.top, 13)
+                .padding(.bottom, 11)
+
+            WeeklySection(snapshot: snapshot, now: now)
+
+            Spacer(minLength: 8)
             footer
         }
         // +flare so content keeps its 22pt margin from the *body* edge, which is
@@ -160,8 +169,9 @@ struct ExpandedView: View {
     }
 }
 
-/// Small all-caps section label.
-private struct Label2: View {
+/// Small all-caps section label. Shared with the weekly section so the two halves of
+/// the panel keep one typographic voice.
+struct Label2: View {
     let text: String
     init(_ text: String) { self.text = text }
 
@@ -176,28 +186,35 @@ private struct Label2: View {
 struct RingGauge: View {
     let fraction: Double
     let percent: Double
+    /// Defaults are the 84pt session gauge. The weekly ring, when a plan actually
+    /// reports a weekly percentage, reuses this at roughly half the size — the two
+    /// gauges must read as the same instrument, so they share one implementation
+    /// rather than a lookalike.
+    var lineWidth: CGFloat = 8
+    var numberSize: CGFloat = 23
+    var unitSize: CGFloat = 10
 
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color.white.opacity(0.08), lineWidth: 8)
+                .stroke(Color.white.opacity(0.08), lineWidth: lineWidth)
 
             Circle()
                 .trim(from: 0, to: max(fraction, 0.001))
                 .stroke(
                     Theme.gauge(for: fraction),
-                    style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
                 .shadow(color: Theme.gauge(for: fraction).opacity(0.45), radius: 5)
 
             VStack(spacing: -1) {
                 Text(percentText)
-                    .font(.system(size: 23, weight: .bold, design: .rounded))
+                    .font(.system(size: numberSize, weight: .bold, design: .rounded))
                     .foregroundStyle(Theme.primaryText)
                     .monospacedDigit()
                 Text("%")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: unitSize, weight: .semibold))
                     .foregroundStyle(Theme.secondaryText)
             }
         }
