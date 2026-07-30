@@ -131,19 +131,19 @@ is deliberate: it lives in the notch.
 To reach Settings, launch-at-login or Quit, either **right-click the buddy** (or the
 open panel), or use the **•••** button in the panel footer.
 
-### The corner where the panel meets the top edge
+### The shoulders where the panel meets the top edge
 
-Every corner of the panel is a **true quarter circle**, drawn as a cubic with the
-standard circle constant `4(√2−1)/3`. The top two are concave: the cutout flares *out*
-into the top edge of the display rather than rounding off, so black is added in that
-corner, not removed.
+Each shoulder is an **ogee** — two quarter circles of radius `flare / 2`, one concave
+then one convex — so the boundary is **vertical at both ends**: perpendicular to the
+top edge of the display, and parallel to the body's side edge where it lands.
 
-This was originally a `addQuadCurve`, which cannot represent a circular arc at all — a
-quadratic through those endpoints passes through `(0.75r, 0.25r)` where the arc passes
-through `(0.707r, 0.293r)`. That is a 6.1% deviation, 1.2pt at the 20pt flare, and it
-is biased toward the top edge, so the curve visibly pulled inside the ideal arc near
-the top and read as clipped rather than swept. The cubic tracks the arc to within
-0.03%.
+It took three attempts. A `addQuadCurve` cannot describe a circular arc at all (6.1%
+off the radius, biased toward the top edge). Replacing it with a *single* true quarter
+circle was geometrically exact and still looked sharp, because a quarter arc is tangent
+to the top edge: at a 20pt flare the boundary moves 6.2pt inward within the first 1pt
+of descent, so the black ended in a razor-thin wedge. Only the ogee removes it —
+curvature flips sign at the midpoint, which is what makes it read as a shoulder rather
+than a bite.
 
 There is deliberately no menu bar status item. On a notched Mac the bar fills up fast
 — measured here, only 55pt separated the cutout from the leftmost Control Center item,
