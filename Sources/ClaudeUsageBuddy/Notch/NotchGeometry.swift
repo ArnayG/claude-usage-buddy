@@ -12,22 +12,25 @@ enum NotchGeometry {
     /// flare into the top edge of the display — the body only reaches this full
     /// width at the very top.
     ///
-/// The height is written as an explicit sum of the sections it has to fit. Three
-    /// features grew this number independently and every merge collided on it; a sum
-    /// also makes the cost of each section visible for the layout pass that will bring
-    /// the panel back down.
+/// The height is an explicit sum of what the panel has to fit, so the cost of each
+    /// band is visible rather than buried in one magic number.
     ///
-    /// It stays one panel rather than tabs or a disclosure triangle: the whole
-    /// interaction is a hover, so anything needing a click to reveal would never be
-    /// seen. Height is the cheap dimension — the panel hangs from the top edge, so
-    /// growing downward only costs screen while you are actually hovering. At this
-    /// total it costs a lot of it, which is the known debt here.
+    /// This came down from 431pt. Three features had each grown the panel independently
+    /// and stacked to 44% of a 982pt screen; they now share one fixed-height slot behind
+    /// a tab bar, and the session row was tightened — a 58pt ring rather than 84, a 64pt
+    /// buddy rather than 88, the reset folded in beside the token count instead of
+    /// occupying its own row, and every font a step down.
+    ///
+    /// It stays one panel rather than something you scroll or resize: the whole
+    /// interaction is a hover, so anything needing a second gesture would never be used.
     static let expandedHeight: CGFloat =
-        214        // session: ring, token count, buddy, reset row, footer
-        + 51       // per-model split bar and legend
-        + 54       // burn-rate projection row
-        + 90       // trailing-week section
-        + 22       // the extra divider each added section needs
+        32         // clearance for the cutout the content sits below
+        + 58       // session row: ring, token count, reset, buddy
+        + 21       // divider and its padding
+        + 20       // tab bar
+        + 64       // the detail slot (fixed, so switching tabs cannot resize the window)
+        + 18       // footer
+        + 12       // bottom padding
 
     static let expandedSize = CGSize(width: 440 + 2 * Theme.topFlare, height: expandedHeight)
 

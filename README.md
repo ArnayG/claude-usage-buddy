@@ -8,34 +8,24 @@ got through in the last seven days.
         ╭─────────────────────────╮
         │        ▓▓ notch ▓▓      │
    ╭────┴─────────────────────────┴─────╮
-   │  ╭───╮  NEW TOKENS     ┌──────┐    │
-   │  │44%│    2,847,309   ─┤ ▪  ▪ ├─   │
-   │  ╰───╯  this window    └┬┬──┬┬┘    │
-   │  SHARE OF NEW TOKENS               │
-   │  ██████████████████████████████  █ │
-   │  ■ Opus 99%    ■ Sonnet <1%        │
-   │  ────────────────────────────────  │
-   │  RESETS IN            AT           │
-   │  1h 20m               9:40 PM      │
-   │  ────────────────────────────────  │
-   │  AT THIS RATE              BURN    │
-   │  full by 8:44 PM ±9m     +15%/h    │
-   │  ────────────────────────────────  │
-   │  LAST 7 DAYS           ACTIVITY    │
-   │  42.3M new tokens  1,361 req · 7   │
-   │  7-day total from this Mac         │
-   │  ● from /usage   [Refresh] [•••]   │
+   │ ╭──╮ NEW TOKENS   RESETS IN  ┌───┐ │
+   │ │62│ 3,035,082    4h 1m     ─┤▪ ▪├─│
+   │ ╰──╯ this window   10:56 PM  └┬┬┬┬┘ │
+   │ ─────────────────────────────────  │
+   │ (Models) (Rate) (Week)             │
+   │ AT THIS RATE                 BURN  │
+   │ full by 9:10 PM ±9m        +15%/h  │
+   │ ● from /usage    [Refresh]  [•••]  │
    ╰────────────────────────────────────╯
 ```
 
-The session window first — **tokens used**, **percentage**, which **models** spent them,
-**reset time**, and where the current **burn rate** lands — then the trailing week
-underneath. Session comes first because it is the limit that stops you working today,
-and the only one whose numbers move while you watch.
+**Tokens used**, **percentage** and **reset time** are always on screen. The three
+detail sections — model split, burn rate, trailing week — share one slot behind a tab
+bar, because you open the panel to answer one question and the other two are noise
+around it.
 
-> **Note on size.** All three of those sections were built in parallel and each grew the
-> panel on its own, so it currently stands at 431pt — deliberately unshrunk while the
-> logic is verified. A layout pass to bring it back down is outstanding.
+The slot is a fixed height, so switching tabs never resizes the window. Which tab you
+picked is remembered.
 
 And a buddy, who is having a progressively worse time as you spend your window.
 

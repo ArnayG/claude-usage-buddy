@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// The hover panel, ordered by what stops you working soonest: the session window
-/// first — tokens used, percentage, which models spent them, reset, and where the
-/// current rate lands — then the trailing week underneath.
+/// The hover panel.
 ///
-/// Everything above the last divider is about the window you are in now, which is the
-/// only number that moves while you watch.
+/// Session state — tokens, percentage, reset — is always on screen. The three detail
+/// sections (model split, burn rate, trailing week) share one slot behind a tab bar,
+/// because stacking them had taken the panel to 431pt and you only ever want one of
+/// them at a time. See `PanelTab`.
 struct ExpandedView: View {
     let snapshot: UsageSnapshot
     /// Ticks once a second so the countdown stays live.
@@ -13,6 +13,8 @@ struct ExpandedView: View {
     /// Where the burn rate lands, as of the last probe. See `BurnRate`.
     var projection: BurnRate.Projection = .unknown(.noSamples)
     var isProbing: Bool = false
+    var tab: PanelTab = .rate
+    var onSelectTab: (PanelTab) -> Void = { _ in }
     var onRefresh: () -> Void
     var onSettings: () -> Void = {}
     var onToggleLogin: () -> Void = {}
@@ -20,69 +22,18 @@ struct ExpandedView: View {
 
     /// Height of the physical cutout; content must clear it.
     private let notchInset: CGFloat = 32
+    /// The detail slot is a fixed height so switching tabs never resizes the window —
+    /// the frame is set by `NotchGeometry`, and content taller than the panel would be
+    /// silently clipped rather than growing it.
+    /// Sized to the tallest of the three sections — the week, which carries two rows
+    /// plus a footnote. At 48 its footnote overran into the footer line.
+    private let sectionHeight: CGFloat = 56
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Color.clear.frame(height: notchInset)
 
-            HStack(alignment: .center, spacing: 18) {
-                RingGauge(fraction: snapshot.fraction, percent: snapshot.percent)
-                    .frame(width: 84, height: 84)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Label2("NEW TOKENS")
-
-                    Text(Format.exact(snapshot.used))
-                        .font(.system(size: 25, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Theme.primaryText)
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-
-                    Text(subtitle)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.secondaryText)
-                        .monospacedDigit()
-                }
-                Spacer(minLength: 8)
-
-                // 88×77 keeps the sprite's 16:14 ratio at exactly 5.5pt per cell,
-                // which lands on whole device pixels at 2×.
-                BuddyView(fraction: snapshot.fraction)
-                    .frame(width: 88, height: 77)
-            }
-
-            // Directly under the token count, because it is a breakdown of exactly that
-            // number — not of the ring's percentage, which has no per-model answer.
-            VStack(alignment: .leading, spacing: 6) {
-                Label2("SHARE OF NEW TOKENS")
-                ModelSplitBar(models: snapshot.byModel)
-            }
-            .padding(.top, 13)
-
-            Rectangle()
-                .fill(Theme.hairline)
-                .frame(height: 1)
-                .padding(.top, 14)
-                .padding(.bottom, 11)
-
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Label2("RESETS IN")
-                    Text(resetCountdown)
-                        .font(.system(size: 17, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Theme.primaryText)
-                        .monospacedDigit()
-                }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 3) {
-                    Label2("AT")
-                    Text(resetClock)
-                        .font(.system(size: 17, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Theme.primaryText)
-                        .monospacedDigit()
-                }
-            }
+            sessionRow
 
             Rectangle()
                 .fill(Theme.hairline)
@@ -90,29 +41,84 @@ struct ExpandedView: View {
                 .padding(.top, 11)
                 .padding(.bottom, 9)
 
-            // Directly under the reset row: both describe the current window, and a
-            // projection only means anything measured against the time left in it.
-            projectionRow
+            HStack(alignment: .center) {
+                PanelTabBar(selection: tab, onSelect: onSelectTab)
+                Spacer(minLength: 8)
+            }
 
-            Rectangle()
-                .fill(Theme.hairline)
-                .frame(height: 1)
-                .padding(.top, 11)
-                .padding(.bottom, 11)
+            detailSection
+                .frame(height: sectionHeight, alignment: .topLeading)
+                .padding(.top, 7)
 
-            WeeklySection(snapshot: snapshot, now: now)
-
-            Spacer(minLength: 8)
+            Spacer(minLength: 4)
             footer
         }
         // +flare so content keeps its 22pt margin from the *body* edge, which is
         // inset from the frame by the flare.
         .padding(.horizontal, 22 + Theme.topFlare)
-        .padding(.bottom, 14)
+        .padding(.bottom, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // No outline: a light stroke traced the whole silhouette, including the
         // edges meeting the notch, and read as a halo separating panel from cutout.
         .background(NotchPanelShape().fill(Theme.panel))
+    }
+
+    /// Always visible: how much is gone, and how long until it comes back. The reset
+    /// moved up here from its own row when the detail sections were tabbed — it is the
+    /// one figure you need regardless of which tab is open.
+    private var sessionRow: some View {
+        HStack(alignment: .center, spacing: 14) {
+            RingGauge(fraction: snapshot.fraction, percent: snapshot.percent,
+                      lineWidth: 6, numberSize: 17, unitSize: 8)
+                .frame(width: 58, height: 58)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Label2("NEW TOKENS")
+                Text(Format.exact(snapshot.used))
+                    .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Theme.primaryText)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text(subtitle)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(Theme.secondaryText)
+            }
+
+            Spacer(minLength: 10)
+
+            VStack(alignment: .trailing, spacing: 2) {
+                Label2("RESETS IN")
+                Text(resetCountdown)
+                    .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Theme.primaryText)
+                    .monospacedDigit()
+                Text(resetClock)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(Theme.secondaryText)
+                    .monospacedDigit()
+            }
+
+            // 64×56 keeps the sprite's 16:14 ratio at exactly 4pt per cell, so it stays
+            // pixel-crisp at the smaller size.
+            BuddyView(fraction: snapshot.fraction)
+                .frame(width: 64, height: 56)
+        }
+    }
+
+    @ViewBuilder
+    private var detailSection: some View {
+        switch tab {
+        case .models:
+            VStack(alignment: .leading, spacing: 5) {
+                Label2("SHARE OF NEW TOKENS")
+                ModelSplitBar(models: snapshot.byModel)
+            }
+        case .rate:
+            projectionRow
+        case .week:
+            WeeklySection(snapshot: snapshot, now: now)
+        }
     }
 
     /// The projection. Labelled "AT THIS RATE" because that is exactly what it is — an
