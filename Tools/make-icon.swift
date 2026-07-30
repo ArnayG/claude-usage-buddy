@@ -13,20 +13,10 @@ static let fullRows = Array(BuddyMood.chipper.grid.drop { !$0.contains("X") })
 
 /// A simplified creature for small icons.
 ///
-/// The full sprite is 16 cells wide, which at a 16pt icon works out below one pixel
-/// per cell — it quantised to nothing and the icon rendered as a plain black square,
-/// which is exactly how it looked blank in Finder's list view. Fewer, chunkier cells
-/// survive the shrink.
-static let compactRows = [
-    "..XXXXXX..",
-    "..X.XX.X..",
-    "XXXXXXXXXX",
-    "..XXXXXX..",
-    "...X..X...",
-]
-
-/// Bolder still, for the 16pt slot Finder's list view uses. Seven columns lets each
-/// cell be a full 2px there instead of a muddy 1px.
+/// The full sprite is 16 cells wide, which at the 16pt slot Finder's list view uses
+/// works out below one pixel per cell — it quantised to nothing and the icon rendered
+/// as a plain black square, the very blankness this was meant to fix. Seven columns
+/// give a full 2px per cell at 16pt and 4px at 32pt.
 static let microRows = [
     ".XXXXX.",
     ".X.X.X.",
@@ -36,11 +26,9 @@ static let microRows = [
 ]
 
 static func art(for size: Int) -> [String] {
-    switch size {
-    case ...20: return microRows
-    case ...40: return compactRows
-    default:    return fullRows
-    }
+    // Small slots use the 7-wide glyph: its cells land on whole pixels at both 16
+    // and 32, where the full 16-wide sprite cannot.
+    size <= 40 ? microRows : fullRows
 }
 
 /// Small icons need proportionally bigger, bolder artwork to stay legible.
@@ -48,8 +36,8 @@ static func layout(for size: Int) -> (inset: CGFloat, share: CGFloat) {
     switch size {
     // Shares are picked so `target / cols` lands on a whole number of pixels at
     // each slot; otherwise rounding either overflows the plate or halves the art.
-    case ...16:  return (26.0 / 1024, 0.95)
-    case ...32:  return (56.0 / 1024, 0.70)
+    case ...16:  return (26.0 / 1024, 0.95)   // plate 15.2 -> 2px cells, art 14px
+    case ...32:  return (32.0 / 1024, 0.95)   // plate 30   -> 4px cells, art 28px
     case ...64:  return (76.0 / 1024, 0.80)
     case ...128: return (88.0 / 1024, 0.70)
     default:     return (100.0 / 1024, 0.62)
