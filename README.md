@@ -225,8 +225,10 @@ Because the fit reports a standard error, the app can tell when it does not know
 | `full by 8:44 PM ±9m` | rising by more than ~2σ, and the cap arrives before the reset |
 | `resets before you run out` | genuinely rising, but the window resets first |
 | `not on track to run out` | flat, falling, or rising too weakly to distinguish from rounding |
-| `need more readings` | fewer than 3 readings, or under 8 minutes of baseline |
+| `need more readings` | fewer than 3 readings in the current window |
+| `measuring…` | 3 or more readings, but under 8 minutes of baseline |
 | `trend too old to trust` | the newest reading is over 15 minutes old |
+| `no active window` | `/usage` gave no reset time |
 
 The window is rolling, which the projection has to respect in three places. Readings from
 before the current window start are discarded, so the slow forward creep of the reset time
