@@ -1,11 +1,31 @@
 import SwiftUI
 
+/// Which of the three detail views the panel is showing.
+///
+/// The session numbers — percentage, tokens, and when it resets — are always on screen;
+/// only the supporting detail rotates. Stacking all three vertically had grown the panel
+/// to 431pt, 44% of a 982pt display, which is too much real estate to hand a hover.
+enum PanelTab: String, CaseIterable {
+    case models, rate, week
+
+    var label: String {
+        switch self {
+        case .models: return "Models"
+        case .rate:   return "Rate"
+        case .week:   return "Week"
+        }
+    }
+}
+
 /// The hover panel.
 ///
-/// Session state — tokens, percentage, reset — is always on screen. The three detail
-/// sections (model split, burn rate, trailing week) share one slot behind a tab bar,
-/// because stacking them had taken the panel to 431pt and you only ever want one of
-/// them at a time. See `PanelTab`.
+/// Always visible: the ring, the token count, and the reset countdown — the reset in
+/// particular because it is the one fact that decides whether to keep working now, and
+/// burying it behind a tab would defeat the point.
+///
+/// Everything else lives in a fixed-height detail area under a segmented control. Fixed
+/// height matters: the window frame is set by `NotchGeometry.expandedSize`, so a detail
+/// view that changed height would either clip or leave a gap rather than resize.
 struct ExpandedView: View {
     let snapshot: UsageSnapshot
     /// Ticks once a second so the countdown stays live.
@@ -13,8 +33,7 @@ struct ExpandedView: View {
     /// Where the burn rate lands, as of the last probe. See `BurnRate`.
     var projection: BurnRate.Projection = .unknown(.noSamples)
     var isProbing: Bool = false
-    var tab: PanelTab = .rate
-    var onSelectTab: (PanelTab) -> Void = { _ in }
+    @Binding var tab: PanelTab
     var onRefresh: () -> Void
     var onSettings: () -> Void = {}
     var onToggleLogin: () -> Void = {}
@@ -22,40 +41,31 @@ struct ExpandedView: View {
 
     /// Height of the physical cutout; content must clear it.
     private let notchInset: CGFloat = 32
-    /// The detail slot is a fixed height so switching tabs never resizes the window —
-    /// the frame is set by `NotchGeometry`, and content taller than the panel would be
-    /// silently clipped rather than growing it.
-    /// Sized to the tallest of the three sections — the week, which carries two rows
-    /// plus a footnote. At 48 its footnote overran into the footer line.
-    private let sectionHeight: CGFloat = 56
+    /// The detail area is sized once, for the tallest of the three views.
+    private let detailHeight: CGFloat = 58
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Color.clear.frame(height: notchInset)
 
-            sessionRow
+            header
+
+            tabStrip
+                .padding(.top, 11)
 
             Rectangle()
                 .fill(Theme.hairline)
                 .frame(height: 1)
-                .padding(.top, 11)
-                .padding(.bottom, 9)
-
-            HStack(alignment: .center) {
-                PanelTabBar(selection: tab, onSelect: onSelectTab)
-                Spacer(minLength: 8)
-            }
-
-            detailSection
-                .frame(height: sectionHeight, alignment: .topLeading)
                 .padding(.top, 7)
+
+            detail
+                .frame(height: detailHeight, alignment: .topLeading)
+                .padding(.top, 8)
 
             Spacer(minLength: 4)
             footer
         }
-        // +flare so content keeps its 22pt margin from the *body* edge, which is
-        // inset from the frame by the flare.
-        .padding(.horizontal, 22 + Theme.topFlare)
+        .padding(.horizontal, 22)
         .padding(.bottom, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // No outline: a light stroke traced the whole silhouette, including the
@@ -63,51 +73,75 @@ struct ExpandedView: View {
         .background(NotchPanelShape().fill(Theme.panel))
     }
 
-    /// Always visible: how much is gone, and how long until it comes back. The reset
-    /// moved up here from its own row when the detail sections were tabbed — it is the
-    /// one figure you need regardless of which tab is open.
-    private var sessionRow: some View {
+    /// Ring, token count, reset, buddy — the parts that never rotate away.
+    ///
+    /// The ring is 60pt rather than 84 and the buddy 64×56 rather than 88×77. 64×56 is
+    /// deliberate: the sprite is 16×14 cells, so those dimensions land on exactly 4pt
+    /// per cell and stay pixel-crisp instead of blurring on a fractional grid.
+    private var header: some View {
         HStack(alignment: .center, spacing: 14) {
             RingGauge(fraction: snapshot.fraction, percent: snapshot.percent,
                       lineWidth: 6, numberSize: 17, unitSize: 8)
-                .frame(width: 58, height: 58)
+                .frame(width: 60, height: 60)
 
             VStack(alignment: .leading, spacing: 2) {
                 Label2("NEW TOKENS")
+
                 Text(Format.exact(snapshot.used))
-                    .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    .font(.system(size: 21, weight: .semibold, design: .rounded))
                     .foregroundStyle(Theme.primaryText)
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                Text(subtitle)
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(Theme.secondaryText)
+
+                // Reset folded in here rather than given its own row: it is a single
+                // short phrase, and a whole row for it was 44pt of the old height.
+                HStack(spacing: 4) {
+                    Text(resetCountdown)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Theme.primaryText.opacity(0.85))
+                        .monospacedDigit()
+                    Text(resetTail)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.secondaryText)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
             }
 
-            Spacer(minLength: 10)
+            Spacer(minLength: 6)
 
-            VStack(alignment: .trailing, spacing: 2) {
-                Label2("RESETS IN")
-                Text(resetCountdown)
-                    .font(.system(size: 20, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Theme.primaryText)
-                    .monospacedDigit()
-                Text(resetClock)
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(Theme.secondaryText)
-                    .monospacedDigit()
-            }
-
-            // 64×56 keeps the sprite's 16:14 ratio at exactly 4pt per cell, so it stays
-            // pixel-crisp at the smaller size.
             BuddyView(fraction: snapshot.fraction)
                 .frame(width: 64, height: 56)
         }
     }
 
+    /// Segmented control. Plain capsules rather than `Picker`: the panel is a
+    /// non-activating window, and a system segmented control renders its selection with
+    /// accent-colour vibrancy that fights the flat near-black here.
+    private var tabStrip: some View {
+        HStack(spacing: 5) {
+            ForEach(PanelTab.allCases, id: \.self) { candidate in
+                Button { tab = candidate } label: {
+                    Text(candidate.label)
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(candidate == tab
+                                         ? Theme.primaryText
+                                         : Theme.secondaryText)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 3.5)
+                        .background(
+                            Capsule().fill(Color.white.opacity(candidate == tab ? 0.15 : 0.05))
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
     @ViewBuilder
-    private var detailSection: some View {
+    private var detail: some View {
         switch tab {
         case .models:
             VStack(alignment: .leading, spacing: 5) {
@@ -131,7 +165,7 @@ struct ExpandedView: View {
                 Label2("AT THIS RATE")
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(projection.headline)
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .font(.system(size: 13.5, weight: .semibold, design: .rounded))
                         .foregroundStyle(projectionColour)
                         .monospacedDigit()
                         .lineLimit(1)
@@ -152,7 +186,7 @@ struct ExpandedView: View {
             VStack(alignment: .trailing, spacing: 3) {
                 Label2("BURN")
                 Text(projection.rateText ?? "—")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .font(.system(size: 13.5, weight: .semibold, design: .rounded))
                     .foregroundStyle(Theme.secondaryText)
                     .monospacedDigit()
             }
@@ -239,16 +273,15 @@ struct ExpandedView: View {
         return "from /usage · \(Format.duration(age)) ago" + suffix
     }
 
-    private var subtitle: String { "this 5-hour window" }
-
     private var resetCountdown: String {
         guard let at = snapshot.resetAt else { return "—" }
         return Format.duration(max(at.timeIntervalSince(now), 0))
     }
 
-    private var resetClock: String {
+    /// Reads as "1h 20m · resets 10:49 PM".
+    private var resetTail: String {
         guard let at = snapshot.resetAt else { return "no active window" }
-        return Format.time(at)
+        return "· resets \(Format.time(at))"
     }
 }
 

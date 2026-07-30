@@ -7,25 +7,33 @@ got through in the last seven days.
 ```
         ╭─────────────────────────╮
         │        ▓▓ notch ▓▓      │
-   ╭────┴─────────────────────────┴─────╮
-   │ ╭──╮ NEW TOKENS   RESETS IN  ┌───┐ │
-   │ │62│ 3,035,082    4h 1m     ─┤▪ ▪├─│
-   │ ╰──╯ this window   10:56 PM  └┬┬┬┬┘ │
-   │ ─────────────────────────────────  │
-   │ (Models) (Rate) (Week)             │
-   │ AT THIS RATE                 BURN  │
-   │ full by 9:10 PM ±9m        +15%/h  │
-   │ ● from /usage    [Refresh]  [•••]  │
-   ╰────────────────────────────────────╯
+   ╭────┴─────────────────────────┴────╮
+   │  ╭──╮  NEW TOKENS      ┌──────┐   │
+   │  │62│  3,035,082      ─┤ ▪  ▪ ├─  │
+   │  ╰──╯  1h 20m · resets └┬┬──┬┬┘   │
+   │        8:38 PM                    │
+   │  (Models) ( Rate ) ( Week )       │
+   │  ─────────────────────────────    │
+   │  SHARE OF NEW TOKENS              │
+   │  ████████████████████████  ███  █ │
+   │  ■ Opus 59%  ■ Sonnet 36%  ■ 5%   │
+   │  ● from /usage    [Refresh] [•••] │
+   ╰───────────────────────────────────╯
 ```
 
-**Tokens used**, **percentage** and **reset time** are always on screen. The three
-detail sections — model split, burn rate, trailing week — share one slot behind a tab
-bar, because you open the panel to answer one question and the other two are noise
-around it.
+The session window first — **tokens used**, **percentage**, which **models** spent them,
+**reset time**, and where the current **burn rate** lands — then the trailing week
+underneath. Session comes first because it is the limit that stops you working today,
+and the only one whose numbers move while you watch.
 
-The slot is a fixed height, so switching tabs never resizes the window. Which tab you
-picked is remembered.
+The percentage, the token count and **when it resets** are always on screen. The three
+detail views — models, burn rate, week — rotate through one tabbed area below, because
+stacking them had taken the panel to 431pt, 44% of a 982pt display. Tabbed, with a
+smaller gauge, a smaller buddy and slightly smaller type, it sits at **235pt**: barely
+more than the 214pt it occupied before any of them existed.
+
+The reset stays out of the tabs on purpose. It is the one fact that decides whether to
+keep working right now, so it should never be a click away.
 
 And a buddy, who is having a progressively worse time as you spend your window.
 
@@ -130,20 +138,6 @@ is deliberate: it lives in the notch.
 
 To reach Settings, launch-at-login or Quit, either **right-click the buddy** (or the
 open panel), or use the **•••** button in the panel footer.
-
-### The shoulders where the panel meets the top edge
-
-Each shoulder is an **ogee** — two quarter circles of radius `flare / 2`, one concave
-then one convex — so the boundary is **vertical at both ends**: perpendicular to the
-top edge of the display, and parallel to the body's side edge where it lands.
-
-It took three attempts. A `addQuadCurve` cannot describe a circular arc at all (6.1%
-off the radius, biased toward the top edge). Replacing it with a *single* true quarter
-circle was geometrically exact and still looked sharp, because a quarter arc is tangent
-to the top edge: at a 20pt flare the boundary moves 6.2pt inward within the first 1pt
-of descent, so the black ended in a razor-thin wedge. Only the ogee removes it —
-curvature flips sign at the midpoint, which is what makes it read as a shoulder rather
-than a bite.
 
 There is deliberately no menu bar status item. On a notched Mac the bar fills up fast
 — measured here, only 55pt separated the cutout from the leftmost Control Center item,

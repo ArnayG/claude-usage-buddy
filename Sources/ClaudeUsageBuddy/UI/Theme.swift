@@ -70,96 +70,29 @@ enum Theme {
     }
 
     static let cornerRadius: CGFloat = 22
-    /// Size of the flare where the panel's sides meet the top edge of the display.
-    ///
-    /// Kept at or below the 32pt menu bar height so the curve resolves inside the
-    /// menu bar strip rather than running on down into the panel body.
-    static let topFlare: CGFloat = 20
 }
 
-/// The expanded panel's silhouette.
+/// The expanded panel's silhouette: square at the top, rounded at the bottom.
 ///
-/// The bottom corners carry the big convex "dynamic island" curve. The top two are the
-/// shoulders where the panel meets the top edge of the display: the cutout flares *out*
-/// into that edge rather than rounding off, so black is added in the corner, not taken
-/// away.
-///
-/// Each shoulder is an **ogee** — two quarter circles of radius `flare / 2`, one concave
-/// then one convex — not a single quarter circle.
-///
-/// That matters, and it is the third attempt at this corner. A single quarter arc is
-/// *tangent* to the top edge, so the boundary runs almost horizontally where it meets
-/// it: measured at a 20pt flare, it moves 6.2pt inward within the first 1pt of descent
-/// and 1.4pt within the first 0.05pt. Geometrically it is a perfect arc; visually the
-/// black ends in a razor-thin wedge, which is what read as a sharp corner. (Before that
-/// it was an `addQuadCurve`, which cannot describe a circular arc at all — 6.1% off the
-/// radius, biased toward the top edge.)
-///
-/// The ogee is **vertical at both ends**: perpendicular to the top edge, so there is no
-/// wedge and the display edge simply cuts it off cleanly, and parallel to the body's
-/// side edge where it lands, so there is no corner there either. Curvature flips sign at
-/// the midpoint, which is what makes it read as a smooth shoulder rather than a bite.
-///
-/// The body sits inset by `flare` on each side and only reaches full width at the very
-/// top edge.
+/// The top corners are deliberately left square. Three shapes were tried against the
+/// real cutout — rounding the corners off, then flaring them outward into the top edge
+/// at two depths — and every one of them looked worse than a clean straight edge next
+/// to the hardware. The panel meets the top of the display flush, like the menu bar
+/// does.
 struct NotchPanelShape: Shape {
-    var flare: CGFloat = Theme.topFlare
     var bottomRadius: CGFloat = Theme.cornerRadius
 
-    /// Control-point offset that turns a cubic into a quarter circle: 4(√2−1)/3.
-    /// Standard result — the value that puts the curve's midpoint exactly on the arc.
-    private static let circleK: CGFloat = 4 * (sqrt(2) - 1) / 3
-
     func path(in rect: CGRect) -> Path {
-        let f = min(flare, rect.width / 2)
-        let br = min(bottomRadius, min(rect.width / 2 - f, rect.height / 2))
-        let h = f / 2                       // radius of each half of the shoulder
-        let kh = h * Self.circleK
-        let kb = br * Self.circleK
-
+        let r = min(bottomRadius, min(rect.width, rect.height) / 2)
         var p = Path()
-
-        // Full width along the very top edge of the display.
         p.move(to: CGPoint(x: rect.minX, y: rect.minY))
         p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-
-        // Right shoulder. Concave half: leaves the top edge straight down, arrives at
-        // the inflection running horizontally.
-        p.addCurve(to: CGPoint(x: rect.maxX - h, y: rect.minY + h),
-                   control1: CGPoint(x: rect.maxX, y: rect.minY + kh),
-                   control2: CGPoint(x: rect.maxX - h + kh, y: rect.minY + h))
-        // Convex half: leaves the inflection horizontally, lands on the body edge
-        // running straight down.
-        p.addCurve(to: CGPoint(x: rect.maxX - f, y: rect.minY + f),
-                   control1: CGPoint(x: rect.maxX - h - kh, y: rect.minY + h),
-                   control2: CGPoint(x: rect.maxX - f, y: rect.minY + f - kh))
-
-        p.addLine(to: CGPoint(x: rect.maxX - f, y: rect.maxY - br))
-
-        // Convex round, bottom-right.
-        p.addCurve(to: CGPoint(x: rect.maxX - f - br, y: rect.maxY),
-                   control1: CGPoint(x: rect.maxX - f, y: rect.maxY - br + kb),
-                   control2: CGPoint(x: rect.maxX - f - br + kb, y: rect.maxY))
-
-        p.addLine(to: CGPoint(x: rect.minX + f + br, y: rect.maxY))
-
-        // Convex round, bottom-left.
-        p.addCurve(to: CGPoint(x: rect.minX + f, y: rect.maxY - br),
-                   control1: CGPoint(x: rect.minX + f + br - kb, y: rect.maxY),
-                   control2: CGPoint(x: rect.minX + f, y: rect.maxY - br + kb))
-
-        p.addLine(to: CGPoint(x: rect.minX + f, y: rect.minY + f))
-
-        // Left shoulder, mirrored — and traversed upward, so both control points are
-        // the mirror of the right shoulder's *reversed*. Getting one of them on the
-        // wrong side of the inflection puts a visible hook in the curve.
-        p.addCurve(to: CGPoint(x: rect.minX + h, y: rect.minY + h),
-                   control1: CGPoint(x: rect.minX + f, y: rect.minY + f - kh),
-                   control2: CGPoint(x: rect.minX + h + kh, y: rect.minY + h))
-        p.addCurve(to: CGPoint(x: rect.minX, y: rect.minY),
-                   control1: CGPoint(x: rect.minX + h - kh, y: rect.minY + h),
-                   control2: CGPoint(x: rect.minX, y: rect.minY + kh))
-
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
+        p.addQuadCurve(to: CGPoint(x: rect.maxX - r, y: rect.maxY),
+                       control: CGPoint(x: rect.maxX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX + r, y: rect.maxY))
+        p.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - r),
+                       control: CGPoint(x: rect.minX, y: rect.maxY))
         p.closeSubpath()
         return p
     }

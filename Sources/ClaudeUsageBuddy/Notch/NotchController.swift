@@ -213,8 +213,10 @@ final class PanelState: ObservableObject {
     @Published var isExpanded = false
     /// Drives the live countdown without the views owning a timer each.
     @Published var now = Date()
-    /// Seeded from `Settings` so the panel reopens on the tab you last chose.
-    @Published var tab: PanelTab = PanelTab(rawValue: Settings.panelTabRaw ?? "") ?? .rate
+    /// Which detail view the panel is showing. Held here rather than as `@State`
+    /// inside the panel: the expanded content is built fresh on every hover, so view
+    /// state would reset to the first tab each time you opened it.
+    @Published var tab: PanelTab = .models
 }
 
 /// Contents of the always-visible peek window. Static by design — see `PeekWindow`.
@@ -271,11 +273,7 @@ private struct NotchRootView: View {
                              now: state.now,
                              projection: store.projection,
                              isProbing: store.isProbing,
-                             tab: state.tab,
-                             onSelectTab: { tab in
-                                 state.tab = tab
-                                 Settings.panelTabRaw = tab.rawValue
-                             },
+                             tab: Binding(get: { state.tab }, set: { state.tab = $0 }),
                              onRefresh: onRefresh,
                              onSettings: onSettings,
                              onToggleLogin: onToggleLogin,

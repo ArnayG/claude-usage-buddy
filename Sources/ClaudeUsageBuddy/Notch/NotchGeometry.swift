@@ -8,31 +8,25 @@ import AppKit
 enum NotchGeometry {
     /// Size of the panel once expanded.
     ///
-    /// 440pt of visible body, plus `Theme.topFlare` either side for the concave
-    /// flare into the top edge of the display — the body only reaches this full
-    /// width at the very top.
+    /// 440pt wide, meeting the top edge of the display flush.
     ///
-/// The height is an explicit sum of what the panel has to fit, so the cost of each
-    /// band is visible rather than buried in one magic number.
+    /// Height as an explicit sum of what has to fit, so the cost of each band stays
+    /// visible instead of being buried in one magic number.
     ///
-    /// This came down from 431pt. Three features had each grown the panel independently
-    /// and stacked to 44% of a 982pt screen; they now share one fixed-height slot behind
-    /// a tab bar, and the session row was tightened — a 58pt ring rather than 84, a 64pt
-    /// buddy rather than 88, the reset folded in beside the token count instead of
-    /// occupying its own row, and every font a step down.
-    ///
-    /// It stays one panel rather than something you scroll or resize: the whole
-    /// interaction is a hover, so anything needing a second gesture would never be used.
+    /// This reached 431pt when the three detail sections were stacked — 44% of a 982pt
+    /// display, far too much to hand a hover. Rotating them through a single tabbed
+    /// area, and shrinking the gauge, the buddy and the type, brings it back close to
+    /// what it was before any of them existed.
     static let expandedHeight: CGFloat =
-        32         // clearance for the cutout the content sits below
-        + 58       // session row: ring, token count, reset, buddy
-        + 21       // divider and its padding
-        + 20       // tab bar
-        + 64       // the detail slot (fixed, so switching tabs cannot resize the window)
-        + 18       // footer
+        32         // the cutout itself; content has to clear it
+        + 60       // header: gauge, token count, reset, buddy
+        + 33       // tab strip
+        + 8        // divider
+        + 66       // detail area, sized for the tallest of the three
+        + 24       // footer
         + 12       // bottom padding
 
-    static let expandedSize = CGSize(width: 440 + 2 * Theme.topFlare, height: expandedHeight)
+    static let expandedSize = CGSize(width: 440, height: expandedHeight)
 
     /// The always-visible creature, sitting in the menu bar strip to the right of
     /// the camera. 32×22 renders the trimmed sprite at exactly 2pt per cell.

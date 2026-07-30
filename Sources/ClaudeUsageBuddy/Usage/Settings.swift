@@ -12,22 +12,11 @@ enum Settings {
     private enum Key {
         static let showHairline = "showHairlineGauge"
         static let burnHistory = "burnHistory"
-        static let panelTab = "panelTab"
     }
 
     static var showHairlineGauge: Bool {
         get { d.object(forKey: Key.showHairline) as? Bool ?? true }
         set { d.set(newValue, forKey: Key.showHairline) }
-    }
-
-    /// Which detail section the panel last showed, as a raw string.
-    ///
-    /// Deliberately not typed as `PanelTab`: that lives in the UI layer, and having the
-    /// Usage layer depend upward on it broke the burn-rate test target, which compiles
-    /// Usage on its own. The view layer maps the string to the enum and owns the default.
-    static var panelTabRaw: String? {
-        get { d.string(forKey: Key.panelTab) }
-        set { d.set(newValue, forKey: Key.panelTab) }
     }
 
     /// Recent `/usage` readings, so the burn-rate trend survives a relaunch instead of
