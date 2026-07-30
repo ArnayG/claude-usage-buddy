@@ -65,6 +65,17 @@ enum Main {
         let weekly = UsageBlock.trailingWeek(from: entries, now: now)
         let byModel = ModelUsage.split(entries, since: start)
 
+        // Read-only on purpose. This flag is a sanity check that can be run any number of
+        // times, so it must not append samples the running app would then treat as its
+        // own trend, nor overwrite the history that app is maintaining.
+        var history = Settings.burnHistory
+        if let percent {
+            history.record(percent: percent, at: now, windowStart: windowStart)
+        }
+        let projection = percent.map {
+            BurnRate.project(percent: $0, resetAt: resetAt, history: history.samples, now: now)
+        }
+
         print("""
           entries parsed : \(entries.count)
           new tokens     : \(Format.exact(counts.fresh))   <- headline
@@ -77,6 +88,7 @@ enum Main {
           window start   : \(start.map(Format.time) ?? "—")\(windowStart == nil ? " (inferred locally)" : "")
           resets at      : \(resetAt.map(Format.time) ?? "—")
           resets in      : \(resetAt.map { Format.duration(max($0.timeIntervalSince(now), 0)) } ?? "—")
+          at this rate   : \(projection?.summary() ?? "unknown — no percentage")   <- estimate
           last 7 days    : \(Format.exact(weekly.fresh)) new  (\(Format.exact(weekly.total)) raw)
             requests     : \(weeklyLimit.requests.map(Format.exact) ?? "not reported")
             sessions     : \(weeklyLimit.sessions.map(Format.exact) ?? "not reported")
@@ -155,6 +167,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             menu.addItem(disabled("No active session window"))
         }
+        // Prefixed "At this rate" so the estimate can never be mistaken for the
+        // authoritative readings above it.
+        menu.addItem(disabled("At this rate: \(store.projection.oneLine)"))
         if let error = s.probeError {
             menu.addItem(disabled("⚠ /usage: \(error)"))
         }

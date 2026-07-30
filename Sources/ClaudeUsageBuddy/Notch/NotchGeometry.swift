@@ -19,12 +19,15 @@ enum NotchGeometry {
     ///
     /// It stays one panel rather than tabs or a disclosure triangle: the whole
     /// interaction is a hover, so anything needing a click to reveal would never be
-    /// seen. Height is also the cheap dimension — the panel hangs from the top edge,
-    /// so growing downward only costs screen while you are actually hovering.
+    /// seen. Height is the cheap dimension — the panel hangs from the top edge, so
+    /// growing downward only costs screen while you are actually hovering. At this
+    /// total it costs a lot of it, which is the known debt here.
     static let expandedHeight: CGFloat =
         214        // session: ring, token count, buddy, reset row, footer
         + 51       // per-model split bar and legend
+        + 54       // burn-rate projection row
         + 90       // trailing-week section
+        + 22       // the extra divider each added section needs
 
     static let expandedSize = CGSize(width: 440 + 2 * Theme.topFlare, height: expandedHeight)
 
