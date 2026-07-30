@@ -69,7 +69,7 @@ behind it, so the gauge lives in the few points of real screen just below.
 - **Command Line Tools** to build (`xcode-select --install`). Full Xcode is *not*
   needed.
 - A **notch** is optional. Without one the panel drops from the top-centre of the main
-  screen instead, and the menu bar item works either way.
+  screen instead, and the buddy sits at the top of the menu bar strip either way.
 
 ## Install
 
@@ -82,9 +82,17 @@ make install
 That builds, bundles, ad-hoc signs, copies to `/Applications`, and launches it.
 Other targets: `make run` (run from `dist/`), `make bundle`, `make clean`.
 
-The app is an accessory (`LSUIElement`) — no Dock icon. It also installs a menu bar
-item, which is both a keyboard-reachable alternative to hovering and the fallback UI
-on Macs without a notch.
+The app is an accessory (`LSUIElement`) — **no Dock icon and no Cmd-Tab entry**. That
+is deliberate: it lives in the notch.
+
+To reach Settings, launch-at-login or Quit, either **right-click the buddy** (or the
+open panel), or use the **•••** button in the panel footer.
+
+There is deliberately no menu bar status item. On a notched Mac the bar fills up fast
+— measured here, only 55pt separated the cutout from the leftmost Control Center item,
+and the buddy already occupies 32 of it, while an icon-plus-percentage item needs
+about 62pt. macOS silently hides items that do not fit, so rather than ship invisible
+UI the menu moved onto the panel.
 
 ```sh
 # launch at login
@@ -182,7 +190,7 @@ are excluded on purpose: they are the existing conversation being re-fed on ever
 request, so the same tokens get counted again and again. Measured over one real window
 they were 98.8% of the raw total (245M of 248M), inflating it about 86× while being the
 cheapest token type by an order of magnitude. The raw figure is still available via
-`--print-usage` and in the menu bar item.
+`--print-usage`.
 
 There is nothing to calibrate, and no settings that affect accuracy.
 
@@ -190,7 +198,7 @@ There is nothing to calibrate, and no settings that affect accuracy.
 
 ```
 Sources/ClaudeUsageBuddy/
-├── App.swift              entry point, menu bar item, CLI flags
+├── App.swift              entry point, app menu, CLI flags
 ├── Notch/
 │   ├── NotchGeometry.swift   derives the notch rect at runtime
 │   ├── NotchWindow.swift     borderless panel above the menu bar
